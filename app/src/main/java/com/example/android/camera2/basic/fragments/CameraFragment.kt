@@ -85,8 +85,6 @@ import android.content.ContentValues
 import android.content.pm.PackageManager
 import android.os.Environment
 import android.provider.MediaStore
-import androidx.core.content.ContextCompat
-import java.io.OutputStream
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.hardware.camera2.params.RggbChannelVector
@@ -156,7 +154,7 @@ class CameraFragment : Fragment() {
     // ---- manual control state, applied to preview AND still requests ----
     private var zoomRatio = 1f
     private var wbKelvin = 0           // 0 = auto
-    private var evIndex = 0
+    private var focusDiopter = 0f      // 0 = continuous AF
     private var isoValue: Int? = null      // null = auto ISO
     private var shutterDenom: Int? = null  // null = auto shutter
     private var formatJpeg = false     // default: RAW (unprocess's spirit)
@@ -177,17 +175,21 @@ class CameraFragment : Fragment() {
     )
 
     private val palettes = listOf(
+        // Mocha — darkest, yellow
         Palette("MOCHA", 0xE61E1E2E.toInt(), 0xCC313244.toInt(), 0xFFA6ADC8.toInt(),
             0xFFF9E2AF.toInt(), 0xFF11111B.toInt(), 0xFFCDD6F4.toInt(),
-            0xFFA6ADC8.toInt(), 0xFF11111B.toInt()),
+            0xFF9399B2.toInt(), 0xFF11111B.toInt()),
+        // Macchiato — deep slate, mauve
         Palette("MACCHIATO", 0xE624273A.toInt(), 0xCC363A4F.toInt(), 0xFFA5ADCB.toInt(),
-            0xFFEED49F.toInt(), 0xFF181926.toInt(), 0xFFCAD3F5.toInt(),
-            0xFFA5ADCB.toInt(), 0xFF181926.toInt()),
+            0xFFC6A0F6.toInt(), 0xFF181926.toInt(), 0xFFCAD3F5.toInt(),
+            0xFF939AB7.toInt(), 0xFF181926.toInt()),
+        // Frappe — lighter slate, green
         Palette("FRAPPE", 0xE6303446.toInt(), 0xCC414559.toInt(), 0xFFA5ADCE.toInt(),
-            0xFFE5C890.toInt(), 0xFF232634.toInt(), 0xFFC6D3F5.toInt(),
-            0xFFA5ADCE.toInt(), 0xFF232634.toInt()),
-        Palette("LATTE", 0xE6EFF1F5.toInt(), 0xCCDCE0E8.toInt(), 0xFF6C6F85.toInt(),
-            0xFFDF8E1D.toInt(), 0xFFEFF1F5.toInt(), 0xFF4C4F69.toInt(),
+            0xFFA6D189.toInt(), 0xFF232634.toInt(), 0xFFC6D3F5.toInt(),
+            0xFF838BA7.toInt(), 0xFF232634.toInt()),
+        // Latte — light, blue
+        Palette("LATTE", 0xF2EFF1F5.toInt(), 0xCCDCE0E8.toInt(), 0xFF6C6F85.toInt(),
+            0xFF1E66F5.toInt(), 0xFFFFFFFF.toInt(), 0xFF4C4F69.toInt(),
             0xFF6C6F85.toInt(), 0xFFDCE0E8.toInt())
     )
 
@@ -287,6 +289,36 @@ class CameraFragment : Fragment() {
                 true
             }
         }
+
+        // Pad chrome by system bar insets so it clears notches/gesture bars on any device
+        val d = resources.displayMetrics.density
+        fragmentCameraBinding.root.setOnApplyWindowInsetsListener { v, insets ->
+            val top = insets.systemWindowInsetTop
+            val bottom = insets.systemWindowInsetBottom
+            fragmentCameraBinding.topBar.setPadding(
+                fragmentCameraBinding.topBar.paddingLeft,
+                (18 * d).toInt() + top,
+                fragmentCameraBinding.topBar.paddingRight,
+                0
+            )
+            fragmentCameraBinding.bottomBar.setPadding(
+                fragmentCameraBinding.bottomBar.paddingLeft,
+                0,
+                fragmentCameraBinding.bottomBar.paddingRight,
+                (22 * d).toInt() + bottom
+            )
+            (fragmentCameraBinding.lensBar.layoutParams as? android.widget.FrameLayout.LayoutParams)
+                ?.let { lp ->
+                    lp.bottomMargin = (112 * d).toInt() + bottom
+                    fragmentCameraBinding.lensBar.layoutParams = lp
+                }
+            (fragmentCameraBinding.controlsScroll.layoutParams as? android.widget.FrameLayout.LayoutParams)
+                ?.let { lp ->
+                    lp.bottomMargin = (148 * d).toInt() + bottom
+                    fragmentCameraBinding.controlsScroll.layoutParams = lp
+                }
+            insets.consumeSystemWindowInsets()
+        }
     }
 
     /** Picks the best default camera: back RAW > back > first available. */
@@ -318,9 +350,7 @@ class CameraFragment : Fragment() {
         updateFormatChip()
 
         fragmentCameraBinding.isoChip.setOnClickListener {
-            val show = fragmentCameraBinding.controlsScroll.visibility == View.GONE
-            fragmentCameraBinding.controlsScroll.visibility =
-                if (show) View.VISIBLE else View.GONE
+            togglePanel(fragmentCameraBinding.controlsScroll.visibility == View.GONE)
         }
 
         // Manual WB gains need the MANUAL_POST_PROCESSING capability; hide otherwise
@@ -340,11 +370,20 @@ class CameraFragment : Fragment() {
         }
 
         // Pro sliders — optional fine control on top of the quick chips
+        val sliderRows = listOf(
+            fragmentCameraBinding.isoSliderRow, fragmentCameraBinding.expSliderRow,
+            fragmentCameraBinding.wbSliderRow, fragmentCameraBinding.focusSliderRow
+        )
         fragmentCameraBinding.proSwitch.setOnCheckedChangeListener { _, checked ->
-            fragmentCameraBinding.isoSliderRow.visibility =
-                if (checked) View.VISIBLE else View.GONE
-            fragmentCameraBinding.expSliderRow.visibility =
-                if (checked) View.VISIBLE else View.GONE
+            sliderRows.forEach { row ->
+                if (checked) {
+                    row.visibility = View.VISIBLE
+                    row.alpha = 0f
+                    row.animate().alpha(1f).setDuration(150).start()
+                } else {
+                    row.visibility = View.GONE
+                }
+            }
         }
         fragmentCameraBinding.isoSlider.setOnSeekBarChangeListener(simpleSeek { bar ->
             val v = (50.0 * Math.pow(128.0, bar.progress / 1000.0)).toInt()
@@ -363,6 +402,58 @@ class CameraFragment : Fragment() {
             buildControlChips()
             refreshPreview()
         })
+        fragmentCameraBinding.wbSlider.setOnSeekBarChangeListener(simpleSeek { bar ->
+            wbKelvin = 2500 + (bar.progress * 5.5f).toInt()
+            fragmentCameraBinding.wbSliderVal.text = "${wbKelvin}K"
+            buildControlChips()
+            refreshPreview()
+        })
+        val maxFocus = characteristics.get(
+            CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE
+        ) ?: 0f
+        if (maxFocus <= 0f) fragmentCameraBinding.focusSlider.isEnabled = false
+        fragmentCameraBinding.focusSlider.setOnSeekBarChangeListener(simpleSeek { bar ->
+            focusDiopter = maxFocus * bar.progress / bar.max.toFloat()
+            fragmentCameraBinding.focusSliderVal.text =
+                if (focusDiopter <= 0.01f) "AF"
+                else String.format(Locale.US, "%.1fD", focusDiopter)
+            refreshPreview()
+        })
+        pressScale(fragmentCameraBinding.fmtToggle)
+        pressScale(fragmentCameraBinding.themeChip)
+        pressScale(fragmentCameraBinding.zoomChip)
+        pressScale(fragmentCameraBinding.isoChip)
+        pressScale(fragmentCameraBinding.captureButton)
+    }
+
+    /** Slides the control panel in/out with a fade. */
+    private fun togglePanel(show: Boolean) {
+        val p = fragmentCameraBinding.controlsScroll
+        val d = resources.displayMetrics.density
+        if (show) {
+            p.visibility = View.VISIBLE
+            p.alpha = 0f
+            p.translationY = 36f * d
+            p.animate().alpha(1f).translationY(0f).setDuration(180)
+                .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+        } else {
+            p.animate().alpha(0f).translationY(36f * d).setDuration(140)
+                .setInterpolator(android.view.animation.AccelerateInterpolator())
+                .withEndAction { p.visibility = View.GONE }.start()
+        }
+    }
+
+    /** Subtle press-down scale feedback for tappable views. */
+    private fun pressScale(v: View) {
+        v.setOnTouchListener { view, e ->
+            when (e.action) {
+                MotionEvent.ACTION_DOWN ->
+                    view.animate().scaleX(0.93f).scaleY(0.93f).setDuration(60).start()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                    view.animate().scaleX(1f).scaleY(1f).setDuration(90).start()
+            }
+            false
+        }
     }
 
     /** Rebuilds all chip rows so selection highlights match current state. */
@@ -390,21 +481,6 @@ class CameraFragment : Fragment() {
             refreshPreview()
         }
 
-        // Exposure compensation row
-        val evRange = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
-            ?: Range(0, 0)
-        buildChips(
-            fragmentCameraBinding.evChips,
-            listOf("-2" to -2, "-1" to -1, "0" to 0, "+1" to 1, "+2" to 2),
-            { it == evIndex }
-        ) { value ->
-            if (value in evRange.lower..evRange.upper) {
-                evIndex = value
-                refreshPreview()
-            } else {
-                setStatus("EV not supported")
-            }
-        }
 
         // White balance row
         buildChips(
@@ -414,6 +490,13 @@ class CameraFragment : Fragment() {
             { it == wbKelvin }
         ) { value ->
             wbKelvin = value
+            if (value == 0) {
+                fragmentCameraBinding.wbSliderVal.text = "AUTO"
+            } else {
+                fragmentCameraBinding.wbSlider.progress =
+                    ((value - 2500) / 5.5f).toInt().coerceIn(0, 1000)
+                fragmentCameraBinding.wbSliderVal.text = "${value}K"
+            }
             refreshPreview()
         }
     }
@@ -448,7 +531,7 @@ class CameraFragment : Fragment() {
         b.expSliderVal.setTextColor(pal.text)
         b.proSwitch.thumbTintList = ColorStateList.valueOf(pal.accent)
         b.proSwitch.trackTintList = ColorStateList.valueOf(pal.chip)
-        listOf(b.isoSlider, b.expSlider).forEach { s ->
+        listOf(b.isoSlider, b.expSlider, b.wbSlider, b.focusSlider).forEach { s ->
             s.thumbTintList = ColorStateList.valueOf(pal.accent)
             s.progressTintList = ColorStateList.valueOf(pal.accent)
             s.progressBackgroundTintList = ColorStateList.valueOf(pal.chip)
@@ -513,6 +596,7 @@ class CameraFragment : Fragment() {
                 tag = value
             }
             styleChip(chip, isSelected(value))
+            pressScale(chip)
             row.addView(chip)
         }
     }
@@ -538,10 +622,12 @@ class CameraFragment : Fragment() {
                 setOnClickListener { switchCamera(lens.id) }
             }
             styleChip(chip, lens.id == activeCameraId)
+            pressScale(chip)
             bar.addView(chip)
         }
+        bar.alpha = 0f
+        bar.animate().alpha(1f).setDuration(200).start()
     }
-
     /** Lists back-facing cameras as lenses, labeled by 35mm-equivalent ratio to the main lens. */
     @SuppressLint("MissingPermission")
     private fun enumerateLenses(): List<LensInfo> {
@@ -604,6 +690,28 @@ class CameraFragment : Fragment() {
                 setStatus("switch failed")
             } finally {
                 switching = false
+            }
+        }
+    }
+
+    /** Posts a status line to the camera UI; fades in, auto-hides after a moment. */
+    private fun setStatus(msg: String, sticky: Boolean = false) {
+        lifecycleScope.launch(Dispatchers.Main) {
+            _fragmentCameraBinding?.let { b ->
+                statusClearTask?.let { b.root.removeCallbacks(it) }
+                b.statusText.text = msg
+                b.statusText.visibility = View.VISIBLE
+                b.statusText.animate().cancel()
+                b.statusText.alpha = 0f
+                b.statusText.animate().alpha(1f).setDuration(120).start()
+                if (!sticky) {
+                    val task = Runnable {
+                        b.statusText.animate().alpha(0f).setDuration(200)
+                            .withEndAction { b.statusText.visibility = View.GONE }.start()
+                    }
+                    statusClearTask = task
+                    b.root.postDelayed(task, 2000)
+                }
             }
         }
     }
@@ -696,22 +804,6 @@ class CameraFragment : Fragment() {
         }
     }
 
-    /** Posts a status line to the camera UI; auto-hides after a moment. */
-    private fun setStatus(msg: String, sticky: Boolean = false) {
-        lifecycleScope.launch(Dispatchers.Main) {
-            _fragmentCameraBinding?.let { b ->
-                statusClearTask?.let { b.root.removeCallbacks(it) }
-                b.statusText.text = msg
-                b.statusText.visibility = View.VISIBLE
-                if (!sticky) {
-                    val task = Runnable { b.statusText.visibility = View.GONE }
-                    statusClearTask = task
-                    b.root.postDelayed(task, 2000)
-                }
-            }
-        }
-    }
-
     /** Applies every manual control to any request builder — preview or still. */
     private fun applyState(builder: CaptureRequest.Builder) {
         builder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
@@ -719,14 +811,32 @@ class CameraFragment : Fragment() {
             builder.set(CaptureRequest.CONTROL_ZOOM_RATIO, zoomRatio)
         }
         if (proMode) {
+            val isoRange = characteristics.get(
+                CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE)
+            val expRange = characteristics.get(
+                CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE)
             builder.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_OFF)
-            builder.set(CaptureRequest.SENSOR_SENSITIVITY, iso)
-            builder.set(CaptureRequest.SENSOR_EXPOSURE_TIME, exposureNs)
+            builder.set(
+                CaptureRequest.SENSOR_SENSITIVITY,
+                if (isoRange != null) iso.coerceIn(isoRange.lower, isoRange.upper) else iso
+            )
+            builder.set(
+                CaptureRequest.SENSOR_EXPOSURE_TIME,
+                if (expRange != null) exposureNs.coerceIn(expRange.lower, expRange.upper)
+                else exposureNs
+            )
         } else {
             builder.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON)
-            builder.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, evIndex)
         }
-        builder.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+        if (focusDiopter > 0f) {
+            builder.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF)
+            builder.set(CaptureRequest.LENS_FOCUS_DISTANCE, focusDiopter)
+        } else {
+            builder.set(
+                CaptureRequest.CONTROL_AF_MODE,
+                CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_PICTURE
+            )
+        }
         focusRegion?.let {
             builder.set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(it))
             builder.set(CaptureRequest.CONTROL_AE_REGIONS, arrayOf(it))
@@ -813,6 +923,12 @@ class CameraFragment : Fragment() {
             (cy - half).coerceAtLeast(rect.top),
             half * 2, half * 2, 1000
         )
+        if (focusDiopter > 0f) {
+            // Tapping the scene means "refocus here automatically"
+            focusDiopter = 0f
+            fragmentCameraBinding.focusSlider.progress = 0
+            fragmentCameraBinding.focusSliderVal.text = "AF"
+        }
         refreshPreview()
     }
 

@@ -1,11 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Catppuccin Mocha -->
+    <!-- Catppuccin Mocha (base palette; runtime themes override) -->
     <color name="crust">#11111B</color>
-    <color name="base">#1E1E2E</color>
-    <color name="mantle">#181825</color>
     <color name="surface0">#313244</color>
-    <color name="overlay0">#6C7086</color>
     <color name="subtext0">#A6ADC8</color>
     <color name="text">#CDD6F4</color>
     <color name="yellow">#F9E2AF</color>

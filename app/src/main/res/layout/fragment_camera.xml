@@ -1,5 +1,6 @@
 <FrameLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
@@ -14,8 +15,9 @@
         android:layout_height="match_parent"
         android:foreground="@android:color/transparent" />
 
-    <!-- top bar: wordmark + format toggle -->
+    <!-- top bar: wordmark + status + theme + format -->
     <LinearLayout
+        android:id="@+id/top_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="top"
@@ -27,9 +29,9 @@
 
         <TextView
             android:id="@+id/wordmark"
-            android:layout_width="0dp"
-            android:layout_weight="1"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:singleLine="true"
             android:text="unprocess"
             android:textColor="@color/text"
             android:textSize="15sp"
@@ -40,9 +42,14 @@
 
         <TextView
             android:id="@+id/status_text"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
+            android:layout_weight="1"
             android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
             android:layout_marginEnd="10dp"
+            android:gravity="end|center_vertical"
+            android:singleLine="true"
+            android:ellipsize="end"
             android:textColor="@color/subtext0"
             android:textSize="11sp"
             android:shadowColor="#80000000"
@@ -73,7 +80,7 @@
             android:paddingEnd="12dp"
             android:paddingTop="5dp"
             android:paddingBottom="5dp"
-            android:text="RAW"
+            android:text="RAW+"
             android:textColor="@color/yellow"
             android:textSize="12sp"
             android:textStyle="bold" />
@@ -121,20 +128,6 @@
 
                 <LinearLayout
                     android:id="@+id/shutter_chips"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal" />
-
-            </HorizontalScrollView>
-
-            <HorizontalScrollView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:scrollbars="none">
-
-                <LinearLayout
-                    android:id="@+id/ev_chips"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal" />
@@ -193,6 +186,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:minWidth="52dp"
                     android:text="ISO"
                     android:textColor="@color/subtext0"
                     android:textSize="11sp" />
@@ -214,7 +208,7 @@
                     android:id="@+id/iso_slider_val"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:minWidth="40dp"
+                    android:minWidth="44dp"
                     android:gravity="end"
                     android:text="100"
                     android:textColor="@color/text"
@@ -234,6 +228,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:minWidth="52dp"
                     android:text="SHUTTER"
                     android:textColor="@color/subtext0"
                     android:textSize="11sp" />
@@ -263,6 +258,90 @@
 
             </LinearLayout>
 
+            <LinearLayout
+                android:id="@+id/wb_slider_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="52dp"
+                    android:text="WB"
+                    android:textColor="@color/subtext0"
+                    android:textSize="11sp" />
+
+                <SeekBar
+                    android:id="@+id/wb_slider"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_marginEnd="10dp"
+                    android:max="1000"
+                    android:progress="386"
+                    android:thumbTint="@color/yellow"
+                    android:progressTint="@color/yellow"
+                    android:progressBackgroundTint="@color/surface0" />
+
+                <TextView
+                    android:id="@+id/wb_slider_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="52dp"
+                    android:gravity="end"
+                    android:text="AUTO"
+                    android:textColor="@color/text"
+                    android:textSize="12sp" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/focus_slider_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="52dp"
+                    android:text="FOCUS"
+                    android:textColor="@color/subtext0"
+                    android:textSize="11sp" />
+
+                <SeekBar
+                    android:id="@+id/focus_slider"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_marginEnd="10dp"
+                    android:max="1000"
+                    android:progress="0"
+                    android:thumbTint="@color/yellow"
+                    android:progressTint="@color/yellow"
+                    android:progressBackgroundTint="@color/surface0" />
+
+                <TextView
+                    android:id="@+id/focus_slider_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="44dp"
+                    android:gravity="end"
+                    android:text="AF"
+                    android:textColor="@color/text"
+                    android:textSize="12sp" />
+
+            </LinearLayout>
+
         </LinearLayout>
     </ScrollView>
 
@@ -278,6 +357,7 @@
 
     <!-- bottom control bar -->
     <LinearLayout
+        android:id="@+id/bottom_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
@@ -293,6 +373,7 @@
             android:layout_weight="1"
             android:layout_height="wrap_content"
             android:gravity="start|center_vertical"
+            android:singleLine="true"
             android:text="ISO A"
             android:textColor="@color/text"
             android:textSize="12sp"
@@ -314,6 +395,7 @@
             android:layout_weight="1"
             android:layout_height="wrap_content"
             android:gravity="end|center_vertical"
+            android:singleLine="true"
             android:text="1.0X"
             android:textColor="@color/text"
             android:textSize="12sp"
