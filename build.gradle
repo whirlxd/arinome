@@ -18,8 +18,8 @@
 
 buildscript {
     // Top-level variables used for versioning
-    ext.kotlin_version = '1.5.21'
-    ext.java_version = JavaVersion.VERSION_1_8
+    ext.kotlin_version = '1.9.25'
+    ext.java_version = JavaVersion.VERSION_17
 
     repositories {
         google()

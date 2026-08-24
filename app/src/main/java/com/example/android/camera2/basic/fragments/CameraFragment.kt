@@ -24,6 +24,7 @@ import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CameraMetadata
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.DngCreator
@@ -35,11 +36,14 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
+import android.hardware.camera2.params.MeteringRectangle
+import android.util.Range
 import android.view.LayoutInflater
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.View
 import android.view.ViewGroup
+import android.view.MotionEvent
 import androidx.core.graphics.drawable.toDrawable
 import androidx.exifinterface.media.ExifInterface
 import androidx.fragment.app.Fragment
@@ -79,6 +83,7 @@ import androidx.core.content.ContextCompat
 import java.io.OutputStream
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.hardware.camera2.params.RggbChannelVector
 
 class CameraFragment : Fragment() {
 
@@ -143,6 +148,21 @@ class CameraFragment : Fragment() {
     /** Live data listener for changes in the device orientation relative to the camera */
     private lateinit var relativeOrientation: OrientationLiveData
 
+    /** Reader for HAL JPEG stills (used when the user picks JPEG output) */
+    private lateinit var jpegReader: ImageReader
+
+    // ---- manual control state, applied to preview AND still requests ----
+    private var zoomRatio = 1f
+    private var focusDiopter = 0f      // 0 = continuous AF
+    private var wbKelvin = 0           // 0 = auto
+    private var evIndex = 0
+    private var proMode = false
+    private var iso = 100
+    private var exposureNs = 8_000_000L
+    private var formatJpeg = false     // default: RAW (unprocess's spirit)
+    private var capturing = false
+    private var focusRegion: MeteringRectangle? = null
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -199,6 +219,126 @@ class CameraFragment : Fragment() {
                 Log.d(TAG, "Orientation changed: $orientation")
             })
         }
+
+        fragmentCameraBinding.viewFinder.setOnTouchListener { v, e ->
+            if (e.action == MotionEvent.ACTION_UP) {
+                tapToFocus(e.x, e.y)
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    /** Wires the manual-control UI (format toggle, sliders, pro panel). */
+    private fun wireControls() {
+        fragmentCameraBinding.fmtToggle.setOnClickListener {
+            formatJpeg = !formatJpeg
+            fragmentCameraBinding.fmtToggle.text = if (formatJpeg) "JPEG" else "RAW"
+            setStatus(if (formatJpeg) "output: HAL JPEG" else "output: RAW DNG")
+        }
+
+        val panel = fragmentCameraBinding.controlsScroll
+        fragmentCameraBinding.controlsBtn.setOnClickListener {
+            val show = panel.visibility == android.view.View.GONE
+            panel.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
+        }
+
+        val zoomRange = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            characteristics.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE) ?: Range(1f, 1f)
+        } else {
+            Range(1f, 1f)
+        }
+        fragmentCameraBinding.zoomBar.setOnSeekBarChangeListener(simpleSeek { bar ->
+            val t = bar.progress / bar.max.toFloat()
+            zoomRatio = zoomRange.lower + (zoomRange.upper - zoomRange.lower) * t
+            fragmentCameraBinding.zoomVal.text =
+                String.format(java.util.Locale.US, "%.1fx", zoomRatio)
+            refreshPreview()
+        })
+
+        val maxFocus = characteristics.get(
+            CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE
+        ) ?: 0f
+        if (maxFocus <= 0f) fragmentCameraBinding.focusBar.isEnabled = false
+        fragmentCameraBinding.focusBar.setOnSeekBarChangeListener(simpleSeek { bar ->
+            focusDiopter = maxFocus * bar.progress / bar.max.toFloat()
+            fragmentCameraBinding.focusVal.text =
+                if (focusDiopter <= 0.01f) "af"
+                else String.format(java.util.Locale.US, "%.2fd", focusDiopter)
+            refreshPreview()
+        })
+
+        listOf(
+            fragmentCameraBinding.wbAuto to 0,
+            fragmentCameraBinding.wb3200 to 3200,
+            fragmentCameraBinding.wb4000 to 4000,
+            fragmentCameraBinding.wb5200 to 5200,
+            fragmentCameraBinding.wb6000 to 6000
+        ).forEach { (view, k) ->
+            view.setOnClickListener {
+                wbKelvin = k
+                fragmentCameraBinding.wbVal.text = if (k == 0) "auto" else "${k}K"
+                fragmentCameraBinding.kelvinBar.progress = (k - 2500).coerceIn(0, fragmentCameraBinding.kelvinBar.max)
+                refreshPreview()
+            }
+        }
+        fragmentCameraBinding.kelvinBar.setOnSeekBarChangeListener(simpleSeek { bar ->
+            wbKelvin = 2500 + bar.progress
+            fragmentCameraBinding.wbVal.text = "${wbKelvin}K"
+            refreshPreview()
+        })
+
+        val evRange = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
+            ?: Range(0, 0)
+        fragmentCameraBinding.evBar.setOnSeekBarChangeListener(simpleSeek { bar ->
+            evIndex = (bar.progress - bar.max / 2).coerceIn(evRange.lower, evRange.upper)
+            fragmentCameraBinding.evVal.text = (if (evIndex >= 0) "+" else "") + evIndex.toString()
+            refreshPreview()
+        })
+
+        val isoRange = characteristics.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE)
+        val expRange = characteristics.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE)
+        if (isoRange == null || expRange == null) fragmentCameraBinding.proSwitch.isEnabled = false
+        fragmentCameraBinding.proSwitch.setOnCheckedChangeListener { _, checked ->
+            proMode = checked
+            fragmentCameraBinding.isoRow.visibility =
+                if (checked) android.view.View.VISIBLE else android.view.View.GONE
+            fragmentCameraBinding.isoBar.visibility = fragmentCameraBinding.isoRow.visibility
+            fragmentCameraBinding.expRow.visibility = fragmentCameraBinding.isoRow.visibility
+            fragmentCameraBinding.expBar.visibility = fragmentCameraBinding.isoRow.visibility
+            refreshPreview()
+        }
+        fragmentCameraBinding.isoBar.setOnSeekBarChangeListener(simpleSeek { bar ->
+            val r = isoRange ?: return@simpleSeek
+            val t = bar.progress / bar.max.toFloat()
+            iso = (r.lower * Math.pow(r.upper.toDouble() / r.lower, t.toDouble())).toInt()
+                .coerceIn(r.lower, r.upper)
+            fragmentCameraBinding.isoVal.text = iso.toString()
+            if (proMode) refreshPreview()
+        })
+        fragmentCameraBinding.expBar.setOnSeekBarChangeListener(simpleSeek { bar ->
+            val r = expRange ?: return@simpleSeek
+            val lo = r.lower.coerceAtLeast(10_000L)
+            val hi = r.upper.coerceAtMost(4_000_000_000L)
+            val t = bar.progress / bar.max.toFloat()
+            exposureNs = (lo * Math.pow(hi.toDouble() / lo, t.toDouble())).toLong()
+                .coerceIn(lo, hi)
+            fragmentCameraBinding.expVal.text =
+                (1e9 / exposureNs.toDouble()).toInt().coerceAtLeast(1).toString()
+            if (proMode) refreshPreview()
+        })
+    }
+
+    private inline fun simpleSeek(crossinline block: (android.widget.SeekBar) -> Unit):
+            android.widget.SeekBar.OnSeekBarChangeListener {
+        return object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: android.widget.SeekBar, progress: Int, fromUser: Boolean) {
+                block(seekBar)
+            }
+            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar) = Unit
+            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar) = Unit
+        }
     }
 
     /**
@@ -223,53 +363,169 @@ class CameraFragment : Fragment() {
             size.width, size.height, args.pixelFormat, IMAGE_BUFFER_SIZE
         )
 
+        // HAL JPEG reader for the in-app RAW/JPEG toggle (skips the RAW->bitmap
+        // conversion path entirely; HAL JPEG is faster and better quality)
+        if (args.pixelFormat != ImageFormat.JPEG) {
+            val jpegSize = characteristics.get(
+                CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP
+            )!!
+                .getOutputSizes(ImageFormat.JPEG).maxByOrNull { it.height * it.width }!!
+            jpegReader = ImageReader.newInstance(
+                jpegSize.width, jpegSize.height, ImageFormat.JPEG, IMAGE_BUFFER_SIZE
+            )
+        }
+
         // Creates list of Surfaces where the camera will output frames
-        val targets = listOf(fragmentCameraBinding.viewFinder.holder.surface, imageReader.surface)
+        val targets = listOfNotNull(
+            fragmentCameraBinding.viewFinder.holder.surface,
+            imageReader.surface,
+            if (args.pixelFormat != ImageFormat.JPEG) jpegReader.surface else null
+        )
 
         // Start a capture session using our open camera and list of Surfaces where frames will go
         session = createCaptureSession(camera, targets, cameraHandler)
 
         val captureRequest = camera.createCaptureRequest(
             CameraDevice.TEMPLATE_PREVIEW
-        ).apply { addTarget(fragmentCameraBinding.viewFinder.holder.surface) }
+        ).apply {
+            addTarget(fragmentCameraBinding.viewFinder.holder.surface)
+            applyState(this)
+        }
 
         // This will keep sending the capture request as frequently as possible until the
         // session is torn down or session.stopRepeating() is called
         session.setRepeatingRequest(captureRequest.build(), null, cameraHandler)
 
-        // Listen to the capture button
+        wireControls()
+
+        // Listen to the capture button — non-blocking: saves happen in the IO
+        // scope while the camera keeps shooting
         fragmentCameraBinding.captureButton.setOnClickListener {
-
-            // Disable click listener to prevent multiple requests simultaneously in flight
-            it.isEnabled = false
-
-            // Perform I/O heavy operations in a different scope
+            if (capturing) {
+                setStatus("busy…")
+                return@setOnClickListener
+            }
+            capturing = true
+            setStatus("capturing…")
             lifecycleScope.launch(Dispatchers.IO) {
-                takePhoto().use { result ->
-                    Log.d(TAG, "Result received: $result")
-
-                    // Save the result to disk
-                    val output = saveResult(result)
-                    Log.d(TAG, "Image saved: ${output.absolutePath}")
-
-                    // Display the photo taken to user
-                    lifecycleScope.launch(Dispatchers.Main) {
-                        navController.navigate(
-                            CameraFragmentDirections
-                                .actionCameraToJpegViewer(output.absolutePath)
-                                .setOrientation(result.orientation)
-                                .setDepth(
-                                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-                                            result.format == ImageFormat.DEPTH_JPEG
-                                )
-                        )
+                try {
+                    val reader = if (formatJpeg && args.pixelFormat != ImageFormat.JPEG) {
+                        jpegReader
+                    } else {
+                        imageReader
                     }
+                    takePhoto(reader).use { result ->
+                        val output = saveResult(result)
+                        Log.d(TAG, "Image saved: ${output.absolutePath}")
+                        setStatus("saved ${output.name}")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Capture failed", e)
+                    setStatus("error: ${e.message}")
+                } finally {
+                    capturing = false
                 }
-
-                // Re-enable click listener after photo is taken
-                it.post { it.isEnabled = true }
             }
         }
+    }
+
+    /** Posts a status line to the camera UI. */
+    private fun setStatus(msg: String) {
+        lifecycleScope.launch(Dispatchers.Main) {
+            _fragmentCameraBinding?.statusText?.text = msg
+        }
+    }
+
+    /** Applies every manual control to any request builder — preview or still. */
+    private fun applyState(builder: CaptureRequest.Builder) {
+        builder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            builder.set(CaptureRequest.CONTROL_ZOOM_RATIO, zoomRatio)
+        }
+        if (proMode) {
+            builder.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_OFF)
+            builder.set(CaptureRequest.SENSOR_SENSITIVITY, iso)
+            builder.set(CaptureRequest.SENSOR_EXPOSURE_TIME, exposureNs)
+        } else {
+            builder.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON)
+            builder.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, evIndex)
+        }
+        if (focusDiopter > 0f) {
+            builder.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF)
+            builder.set(CaptureRequest.LENS_FOCUS_DISTANCE, focusDiopter)
+        } else {
+            builder.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+        }
+        focusRegion?.let {
+            builder.set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(it))
+            builder.set(CaptureRequest.CONTROL_AE_REGIONS, arrayOf(it))
+        }
+        builder.set(CaptureRequest.COLOR_CORRECTION_MODE, CameraMetadata.COLOR_CORRECTION_MODE_FAST)
+        if (wbKelvin > 0) {
+            val (rg, bg) = kelvinToGains(wbKelvin)
+            builder.set(
+                CaptureRequest.COLOR_CORRECTION_GAINS,
+                RggbChannelVector(rg, 1f, 1f, bg)
+            )
+        }
+    }
+
+    /** Approximate temperature -> R/B gains, normalized so 5200K is neutral. */
+    private fun kelvinToGains(kelvin: Int): Pair<Float, Float> {
+        fun raw(k: Int): Pair<Double, Double> {
+            val t = k / 100.0
+            val r = if (t <= 66) 255.0 else 329.7 * Math.pow(t - 60, -0.1332)
+            val b = when {
+                t >= 66 -> 255.0
+                t <= 19 -> 0.0
+                else -> 138.52 * kotlin.math.ln(t - 10) - 305.04
+            }
+            return r to b
+        }
+        val (rT, _) = raw(kelvin)
+        val (rN, bN) = raw(5200)
+        val bT = raw(kelvin).second
+        val rg = (255.0 / kotlin.math.max(rT, 1.0) / (255.0 / kotlin.math.max(rN, 1.0)))
+            .toFloat().coerceIn(0.25f, 4f)
+        val bg = (255.0 / kotlin.math.max(bT, 1.0) / (255.0 / kotlin.math.max(bN, 1.0)))
+            .toFloat().coerceIn(0.25f, 4f)
+        return rg to bg
+    }
+
+    /** Rebuilds and re-issues the preview repeating request with current state. */
+    private fun refreshPreview(triggerAf: Boolean = false) {
+        val b = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+            addTarget(fragmentCameraBinding.viewFinder.holder.surface)
+            applyState(this)
+            set(
+                CaptureRequest.CONTROL_AF_TRIGGER,
+                if (triggerAf) CameraMetadata.CONTROL_AF_TRIGGER_START
+                else CameraMetadata.CONTROL_AF_TRIGGER_IDLE
+            )
+        }
+        try {
+            session.setRepeatingRequest(b.build(), null, cameraHandler)
+        } catch (e: Exception) {
+            Log.e(TAG, "refreshPreview failed", e)
+        }
+    }
+
+    /** Tap-to-focus: maps view coords onto the active array and fires AF. */
+    private fun tapToFocus(x: Float, y: Float) {
+        val rect = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE) ?: return
+        val vf = fragmentCameraBinding.viewFinder
+        val nx = (x / vf.width).coerceIn(0.05f, 0.95f)
+        val ny = (y / vf.height).coerceIn(0.05f, 0.95f)
+        val cx = rect.left + (nx * rect.width()).toInt()
+        val cy = rect.top + (ny * rect.height()).toInt()
+        val half = (kotlin.math.min(rect.width(), rect.height()) * 0.06f).toInt().coerceAtLeast(24)
+        focusRegion = MeteringRectangle(
+            (cx - half).coerceAtLeast(rect.left),
+            (cy - half).coerceAtLeast(rect.top),
+            half * 2, half * 2, 1000
+        )
+        if (focusDiopter <= 0f) refreshPreview(triggerAf = true)
+        cameraHandler.postDelayed({ refreshPreview() }, 150)
     }
 
     /** Opens the camera and returns the opened device (as the result of the suspend coroutine) */
@@ -332,25 +588,33 @@ class CameraFragment : Fragment() {
      * template. It performs synchronization between the [CaptureResult] and the [Image] resulting
      * from the single capture, and outputs a [CombinedCaptureResult] object.
      */
-    private suspend fun takePhoto():
+    private suspend fun takePhoto(reader: ImageReader):
             CombinedCaptureResult = suspendCoroutine { cont ->
 
         // Flush any images left in the image reader
         @Suppress("ControlFlowWithEmptyBody")
-        while (imageReader.acquireNextImage() != null) {
+        while (reader.acquireNextImage() != null) {
         }
 
         // Start a new image queue
         val imageQueue = ArrayBlockingQueue<Image>(IMAGE_BUFFER_SIZE)
-        imageReader.setOnImageAvailableListener({ reader ->
-            val image = reader.acquireNextImage()
+        reader.setOnImageAvailableListener({ r ->
+            val image = r.acquireNextImage()
             Log.d(TAG, "Image available in queue: ${image.timestamp}")
             imageQueue.add(image)
         }, imageReaderHandler)
 
         val captureRequest = session.device.createCaptureRequest(
             CameraDevice.TEMPLATE_STILL_CAPTURE
-        ).apply { addTarget(imageReader.surface) }
+        ).apply {
+            addTarget(reader.surface)
+            applyState(this)
+            // HAL rotates pixels + writes EXIF itself; avoids post-save
+            // ExifInterface rewrites that OxygenOS rejects on MediaStore
+            if (reader.imageFormat == ImageFormat.JPEG) {
+                set(CaptureRequest.JPEG_ORIENTATION, relativeOrientation.value ?: 0)
+            }
+        }
         session.capture(captureRequest.build(), object : CameraCaptureSession.CaptureCallback() {
 
             override fun onCaptureStarted(
@@ -396,7 +660,7 @@ class CameraFragment : Fragment() {
 
                         // Unset the image reader listener
                         imageReaderHandler.removeCallbacks(timeoutRunnable)
-                        imageReader.setOnImageAvailableListener(null, null)
+                        reader.setOnImageAvailableListener(null, null)
 
                         // Clear the queue of images, if there are left
                         while (imageQueue.size > 0) {
@@ -412,7 +676,7 @@ class CameraFragment : Fragment() {
                         // Build the result and resume progress
                         cont.resume(
                             CombinedCaptureResult(
-                                image, result, exifOrientation, imageReader.imageFormat
+                                image, result, exifOrientation, reader.imageFormat
                             )
                         )
 
@@ -426,6 +690,27 @@ class CameraFragment : Fragment() {
     /** Helper function used to save a [CombinedCaptureResult] into a [File] */
     private suspend fun saveResult(result: CombinedCaptureResult): File = suspendCoroutine { cont ->
         when (result.format) {
+            // HAL JPEG: raw bytes straight from the ISP, saved as-is
+            ImageFormat.JPEG -> {
+                val buffer = result.image.planes[0].buffer
+                val bytes = ByteArray(buffer.remaining()).also { buffer.get(it) }
+                val filename = "IMG_${
+                    SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                }.jpg"
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DCIM}/Camera")
+                }
+                val resolver = requireContext().contentResolver
+                val uri = resolver.insert(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues
+                ) ?: throw IOException("Failed to create MediaStore entry")
+                resolver.openOutputStream(uri)?.use { it.write(bytes) }
+                val dcim = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)
+                cont.resume(File(File(dcim, "Camera"), filename))
+            }
+
             // Only expecting RAW sensor data
             ImageFormat.RAW_SENSOR -> {
                 val dngCreator = DngCreator(characteristics, result.metadata)
@@ -566,6 +851,10 @@ class CameraFragment : Fragment() {
                             FileOutputStream(file).use { outputStream ->
                                 dngCreator.writeImage(outputStream, result.image)
                             }
+
+                            // BUGFIX (fork): the legacy path never resumed the
+                            // coroutine, leaving captures hanging forever
+                            cont.resume(file)
                         }
                     }
 
