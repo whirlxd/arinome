@@ -14,31 +14,67 @@
         android:layout_height="match_parent"
         android:foreground="@android:color/transparent" />
 
-    <TextView
-        android:id="@+id/status_text"
-        android:layout_width="wrap_content"
+    <!-- top bar: wordmark + format toggle -->
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|start"
-        android:layout_margin="10dp"
-        android:background="#99000000"
-        android:paddingStart="8dp"
-        android:paddingEnd="8dp"
-        android:paddingTop="3dp"
-        android:paddingBottom="3dp"
-        android:textColor="#EDEDEF"
-        android:textSize="12sp"
-        android:fontFamily="monospace" />
+        android:layout_gravity="top"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="18dp">
 
-    <!-- slide-up controls panel -->
+        <TextView
+            android:id="@+id/wordmark"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="unprocess"
+            android:textColor="@color/text"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.02"
+            android:shadowColor="#80000000"
+            android:shadowRadius="4" />
+
+        <TextView
+            android:id="@+id/status_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="10dp"
+            android:textColor="@color/subtext0"
+            android:textSize="11sp"
+            android:shadowColor="#80000000"
+            android:shadowRadius="4"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/fmt_toggle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_chip"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="5dp"
+            android:paddingBottom="5dp"
+            android:text="RAW"
+            android:textColor="@color/yellow"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+    </LinearLayout>
+
+    <!-- slide-up control panel -->
     <ScrollView
         android:id="@+id/controls_scroll"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:layout_marginStart="10dp"
-        android:layout_marginEnd="10dp"
-        android:layout_marginBottom="104dp"
-        android:background="#D917171C"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="148dp"
+        android:background="@drawable/bg_panel"
         android:scrollbars="none"
         android:visibility="gone">
 
@@ -47,233 +83,120 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="10dp">
+            android:padding="14dp">
 
-            <LinearLayout
+            <HorizontalScrollView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp" android:layout_weight="1"
-                    android:layout_height="wrap_content"
-                    android:text="ZOOM"
-                    android:textColor="#8A8A93" android:textSize="11sp"
-                    android:fontFamily="monospace" />
-                <TextView android:id="@+id/zoom_val"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="1.0x" android:textColor="#EDEDEF" android:textSize="13sp"
-                    android:fontFamily="monospace" />
-            </LinearLayout>
-            <SeekBar android:thumbTint="#FFB000" android:progressTint="#FFB000" android:progressBackgroundTint="#2A2A31" android:id="@+id/zoom_bar"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="4dp" android:max="400" android:progress="100" />
+                android:scrollbars="none">
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp" android:layout_weight="1"
-                    android:layout_height="wrap_content"
-                    android:text="FOCUS"
-                    android:textColor="#8A8A93" android:textSize="11sp"
-                    android:fontFamily="monospace" />
-                <TextView android:id="@+id/focus_val"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="af" android:textColor="#EDEDEF" android:textSize="13sp"
-                    android:fontFamily="monospace" />
-            </LinearLayout>
-            <SeekBar android:thumbTint="#FFB000" android:progressTint="#FFB000" android:progressBackgroundTint="#2A2A31" android:id="@+id/focus_bar"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="4dp" android:max="1000" android:progress="0" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp" android:layout_weight="1"
-                    android:layout_height="wrap_content"
-                    android:text="WHITE BALANCE"
-                    android:textColor="#8A8A93" android:textSize="11sp"
-                    android:fontFamily="monospace" />
-                <TextView android:id="@+id/wb_val"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="auto" android:textColor="#EDEDEF" android:textSize="13sp"
-                    android:fontFamily="monospace" />
-            </LinearLayout>
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:orientation="horizontal">
-                <TextView android:id="@+id/wb_auto" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:text="AUTO"
-                    android:paddingStart="8dp" android:paddingEnd="8dp"
-                    android:background="#2A2A31" android:textColor="#8A8A93"
-                    android:textSize="11sp" android:fontFamily="monospace"
-                    android:layout_marginEnd="5dp" />
-                <TextView android:id="@+id/wb_3200" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:text="3200K"
-                    android:paddingStart="8dp" android:paddingEnd="8dp"
-                    android:background="#2A2A31" android:textColor="#8A8A93"
-                    android:textSize="11sp" android:fontFamily="monospace"
-                    android:layout_marginEnd="5dp" />
-                <TextView android:id="@+id/wb_4000" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:text="4000K"
-                    android:paddingStart="8dp" android:paddingEnd="8dp"
-                    android:background="#2A2A31" android:textColor="#8A8A93"
-                    android:textSize="11sp" android:fontFamily="monospace"
-                    android:layout_marginEnd="5dp" />
-                <TextView android:id="@+id/wb_5200" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:text="5200K"
-                    android:paddingStart="8dp" android:paddingEnd="8dp"
-                    android:background="#2A2A31" android:textColor="#8A8A93"
-                    android:textSize="11sp" android:fontFamily="monospace"
-                    android:layout_marginEnd="5dp" />
-                <TextView android:id="@+id/wb_6000" android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" android:text="6000K"
-                    android:paddingStart="8dp" android:paddingEnd="8dp"
-                    android:background="#2A2A31" android:textColor="#8A8A93"
-                    android:textSize="11sp" android:fontFamily="monospace" />
-            </LinearLayout>
-            <SeekBar android:thumbTint="#FFB000" android:progressTint="#FFB000" android:progressBackgroundTint="#2A2A31" android:id="@+id/kelvin_bar"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="4dp" android:max="5500" android:progress="2700" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp" android:layout_weight="1"
-                    android:layout_height="wrap_content"
-                    android:text="EXPOSURE COMP"
-                    android:textColor="#8A8A93" android:textSize="11sp"
-                    android:fontFamily="monospace" />
-                <TextView android:id="@+id/ev_val"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="0" android:textColor="#EDEDEF" android:textSize="13sp"
-                    android:fontFamily="monospace" />
-            </LinearLayout>
-            <SeekBar android:thumbTint="#FFB000" android:progressTint="#FFB000" android:progressBackgroundTint="#2A2A31" android:id="@+id/ev_bar"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="4dp" android:max="40" android:progress="20" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp" android:layout_weight="1"
-                    android:layout_height="wrap_content"
-                    android:text="PRO · ISO / SHUTTER"
-                    android:textColor="#8A8A93" android:textSize="11sp"
-                    android:fontFamily="monospace" />
-                <Switch android:id="@+id/pro_switch" android:thumbTint="#FFB000" android:trackTint="#2A2A31"
+                <LinearLayout
+                    android:id="@+id/iso_chips"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
-            </LinearLayout>
-
-            <LinearLayout android:id="@+id/iso_row"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="4dp" android:visibility="gone"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp" android:layout_weight="1"
                     android:layout_height="wrap_content"
-                    android:text="ISO"
-                    android:textColor="#8A8A93" android:textSize="11sp"
-                    android:fontFamily="monospace" />
-                <TextView android:id="@+id/iso_val"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="100" android:textColor="#EDEDEF" android:textSize="13sp"
-                    android:fontFamily="monospace" />
-            </LinearLayout>
-            <SeekBar android:thumbTint="#FFB000" android:progressTint="#FFB000" android:progressBackgroundTint="#2A2A31" android:id="@+id/iso_bar"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="4dp" android:max="2000" android:progress="0"
-                android:visibility="gone" />
+                    android:orientation="horizontal" />
 
-            <LinearLayout android:id="@+id/exp_row"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="4dp" android:visibility="gone"
-                android:orientation="horizontal">
-                <TextView
-                    android:layout_width="0dp" android:layout_weight="1"
+            </HorizontalScrollView>
+
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/shutter_chips"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="SHUTTER 1/x"
-                    android:textColor="#8A8A93" android:textSize="11sp"
-                    android:fontFamily="monospace" />
-                <TextView android:id="@+id/exp_val"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="125" android:textColor="#EDEDEF" android:textSize="13sp"
-                    android:fontFamily="monospace" />
-            </LinearLayout>
-            <SeekBar android:thumbTint="#FFB000" android:progressTint="#FFB000" android:progressBackgroundTint="#2A2A31" android:id="@+id/exp_bar"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="4dp" android:max="1200" android:progress="700"
-                android:visibility="gone" />
+                    android:orientation="horizontal" />
+
+            </HorizontalScrollView>
+
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/ev_chips"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal" />
+
+            </HorizontalScrollView>
+
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/wb_chips"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal" />
+
+            </HorizontalScrollView>
 
         </LinearLayout>
     </ScrollView>
+
+    <!-- lens selector row -->
+    <LinearLayout
+        android:id="@+id/lens_bar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="112dp"
+        android:gravity="center"
+        android:orientation="horizontal" />
 
     <!-- bottom control bar -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:paddingBottom="18dp"
-        android:paddingTop="8dp"
-        android:gravity="center"
+        android:paddingBottom="22dp"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp"
+        android:gravity="center_vertical"
         android:orientation="horizontal">
 
         <TextView
-            android:id="@+id/fmt_toggle"
-            android:layout_width="wrap_content"
+            android:id="@+id/iso_chip"
+            android:layout_width="0dp"
+            android:layout_weight="1"
             android:layout_height="wrap_content"
-            android:minWidth="70dp"
-            android:gravity="center"
-            android:background="#2A2A31"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:paddingTop="6dp"
-            android:paddingBottom="6dp"
-            android:text="RAW"
-            android:textColor="#FFB000"
-            android:textSize="13sp"
-            android:fontFamily="monospace" />
+            android:gravity="start|center_vertical"
+            android:text="ISO A"
+            android:textColor="@color/text"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:shadowColor="#80000000"
+            android:shadowRadius="4" />
 
         <ImageButton
             android:id="@+id/capture_button"
-            android:layout_width="96dp"
-            android:layout_height="96dp"
-            android:layout_marginStart="26dp"
-            android:layout_marginEnd="26dp"
+            android:layout_width="124dp"
+            android:layout_height="62dp"
             android:scaleType="fitCenter"
-            android:background="@drawable/bg_shutter_ring"
+            android:background="@drawable/bg_shutter_pill"
             android:contentDescription="@string/capture" />
 
         <TextView
-            android:id="@+id/controls_btn"
-            android:layout_width="wrap_content"
+            android:id="@+id/zoom_chip"
+            android:layout_width="0dp"
+            android:layout_weight="1"
             android:layout_height="wrap_content"
-            android:minWidth="70dp"
-            android:gravity="center"
-            android:background="#2A2A31"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:paddingTop="6dp"
-            android:paddingBottom="6dp"
-            android:text="CONTROLS"
-            android:textColor="#EDEDEF"
-            android:textSize="13sp"
-            android:fontFamily="monospace" />
+            android:gravity="end|center_vertical"
+            android:text="1.0X"
+            android:textColor="@color/text"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:shadowColor="#80000000"
+            android:shadowRadius="4" />
 
     </LinearLayout>
 

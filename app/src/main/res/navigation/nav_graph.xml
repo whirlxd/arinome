@@ -24,31 +24,10 @@
         android:label="Permissions">
 
         <action
-            android:id="@+id/action_permissions_to_selector"
-            app:destination="@id/selector_fragment"
+            android:id="@+id/action_permissions_to_camera"
+            app:destination="@id/camera_fragment"
             app:popUpTo="@id/permissions_fragment"
             app:popUpToInclusive="true" />
-
-    </fragment>
-
-    <fragment
-        android:id="@+id/selector_fragment"
-        android:name="com.reilandeubank.unprocess.fragments.SelectorFragment"
-        android:label="Selector">
-
-        <action
-            android:id="@+id/action_selector_to_camera"
-            app:destination="@id/camera_fragment">
-            <argument
-                android:name="camera_id"
-                app:argType="string" />
-            <argument
-                android:name="pixel_format"
-                app:argType="integer" />
-            <argument
-                android:name="convert_to_jpeg"
-                app:argType="boolean" />
-        </action>
 
     </fragment>
 
@@ -60,51 +39,19 @@
         <argument
             android:name="camera_id"
             app:argType="string"
-            app:nullable="false" />
+            android:defaultValue="@null"
+            app:nullable="true" />
 
         <argument
             android:name="pixel_format"
             app:argType="integer"
-            app:nullable="false" />
+            android:defaultValue="32" />
 
         <argument
             android:name="convert_to_jpeg"
             app:argType="boolean"
-            app:nullable="false" />
+            android:defaultValue="false" />
 
-
-        <action
-            android:id="@+id/action_camera_to_permissions"
-            app:destination="@id/permissions_fragment"
-            app:popUpTo="@id/camera_fragment"
-            app:popUpToInclusive="true" />
-
-        <action
-            android:id="@+id/action_camera_to_jpeg_viewer"
-            app:destination="@id/image_viewer_fragment"
-            app:launchSingleTop="true" />
-
-    </fragment>
-
-    <fragment
-        android:id="@+id/image_viewer_fragment"
-        android:name="com.reilandeubank.unprocess.fragments.ImageViewerFragment"
-        android:label="Image Viewer">
-
-        <argument
-            android:name="file_path"
-            app:argType="string"
-            app:nullable="false" />
-
-        <argument
-            android:name="orientation"
-            android:defaultValue="0"
-            app:argType="integer" />
-
-        <argument
-            android:name="depth"
-            android:defaultValue="false"
-            app:argType="boolean" />
     </fragment>
 
 </navigation>

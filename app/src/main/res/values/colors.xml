@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Catppuccin Mocha -->
+    <color name="crust">#11111B</color>
+    <color name="base">#1E1E2E</color>
+    <color name="mantle">#181825</color>
+    <color name="surface0">#313244</color>
+    <color name="overlay0">#6C7086</color>
+    <color name="subtext0">#A6ADC8</color>
+    <color name="text">#CDD6F4</color>
+    <color name="yellow">#F9E2AF</color>
+    <color name="peach">#FAB387</color>
+    <color name="teal">#94E2D5</color>
+    <color name="green">#A6E3A1</color>
+    <color name="red">#F38BA8</color>
+
+    <!-- Launcher icon -->
+    <color name="ic_launcher_background">#1E2230</color>
+
+    <!-- Translucent surfaces -->
+    <color name="panel_bg">#E61E1E2E</color>
+    <color name="chip_bg">#CC313244</color>
+</resources>

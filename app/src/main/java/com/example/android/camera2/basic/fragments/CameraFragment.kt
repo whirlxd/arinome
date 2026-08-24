@@ -44,13 +44,14 @@ import android.view.SurfaceHolder
 import android.view.View
 import android.view.ViewGroup
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import androidx.core.graphics.drawable.toDrawable
 import androidx.exifinterface.media.ExifInterface
+import android.widget.LinearLayout
+import android.widget.TextView
+import androidx.lifecycle.lifecycleScope
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Observer
-import androidx.lifecycle.lifecycleScope
-import androidx.navigation.NavController
-import androidx.navigation.Navigation
 import androidx.navigation.fragment.navArgs
 import com.reilandeubank.unprocess.utils.computeExifOrientation
 import com.reilandeubank.unprocess.utils.getPreviewOutputSize
@@ -95,21 +96,17 @@ class CameraFragment : Fragment() {
     /** AndroidX navigation arguments */
     private val args: CameraFragmentArgs by navArgs()
 
-    /** Host's navigation controller */
-    private val navController: NavController by lazy {
-        Navigation.findNavController(requireActivity(), R.id.fragment_container)
-    }
-
     /** Detects, characterizes, and connects to a CameraDevice (used for all camera operations) */
     private val cameraManager: CameraManager by lazy {
         val context = requireContext().applicationContext
         context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     }
 
-    /** [CameraCharacteristics] corresponding to the provided Camera ID */
-    private val characteristics: CameraCharacteristics by lazy {
-        cameraManager.getCameraCharacteristics(args.cameraId)
-    }
+    /** [CameraCharacteristics] corresponding to the active camera */
+    private lateinit var characteristics: CameraCharacteristics
+
+    /** Currently open camera id */
+    private lateinit var activeCameraId: String
 
     /** Readers used as buffers for camera still shots */
     private lateinit var imageReader: ImageReader
@@ -153,15 +150,23 @@ class CameraFragment : Fragment() {
 
     // ---- manual control state, applied to preview AND still requests ----
     private var zoomRatio = 1f
-    private var focusDiopter = 0f      // 0 = continuous AF
     private var wbKelvin = 0           // 0 = auto
     private var evIndex = 0
-    private var proMode = false
-    private var iso = 100
-    private var exposureNs = 8_000_000L
+    private var isoValue: Int? = null      // null = auto ISO
+    private var shutterDenom: Int? = null  // null = auto shutter
     private var formatJpeg = false     // default: RAW (unprocess's spirit)
     private var capturing = false
+    private var switching = false
+    private var statusClearTask: Runnable? = null
     private var focusRegion: MeteringRectangle? = null
+
+    private val proMode: Boolean get() = isoValue != null || shutterDenom != null
+    private val iso: Int get() = isoValue ?: 100
+    private val exposureNs: Long
+        get() = shutterDenom?.let { (1e9 / it).toLong() } ?: 8_000_000L
+
+    /** One selectable physical camera (lens) */
+    private data class LensInfo(val id: String, val label: String)
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -172,14 +177,13 @@ class CameraFragment : Fragment() {
         return fragmentCameraBinding.root
     }
 
-    @SuppressLint("MissingPermission")
+    @SuppressLint("MissingPermission", "ClickableViewAccessibility")
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        fragmentCameraBinding.captureButton.setOnApplyWindowInsetsListener { v, insets ->
-            v.translationX = (-insets.systemWindowInsetRight).toFloat()
-            v.translationY = (-insets.systemWindowInsetBottom).toFloat()
-            insets.consumeSystemWindowInsets()
-        }
+
+        // Resolve which camera to open: nav argument wins, else the best back lens
+        activeCameraId = args.cameraId ?: pickDefaultCamera()
+        characteristics = cameraManager.getCameraCharacteristics(activeCameraId)
 
         fragmentCameraBinding.viewFinder.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
@@ -197,10 +201,6 @@ class CameraFragment : Fragment() {
                     fragmentCameraBinding.viewFinder.display,
                     characteristics,
                     SurfaceHolder::class.java
-                )
-                Log.d(
-                    TAG,
-                    "View finder size: ${fragmentCameraBinding.viewFinder.width} x ${fragmentCameraBinding.viewFinder.height}"
                 )
                 Log.d(TAG, "Selected preview size: $previewSize")
                 fragmentCameraBinding.viewFinder.setAspectRatio(
@@ -220,124 +220,252 @@ class CameraFragment : Fragment() {
             })
         }
 
+        // Pinch to zoom, tap to focus
+        val scaleDetector = ScaleGestureDetector(requireContext(),
+                object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                val range = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    characteristics.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE)
+                        ?: Range(1f, 1f)
+                } else {
+                    Range(1f, 1f)
+                }
+                zoomRatio = (zoomRatio * detector.scaleFactor).coerceIn(range.lower, range.upper)
+                fragmentCameraBinding.zoomChip.text =
+                    String.format(Locale.US, "%.1fX", zoomRatio)
+                refreshPreview()
+                return true
+            }
+        })
         fragmentCameraBinding.viewFinder.setOnTouchListener { v, e ->
-            if (e.action == MotionEvent.ACTION_UP) {
+            scaleDetector.onTouchEvent(e)
+            if (e.action == MotionEvent.ACTION_UP && !scaleDetector.isInProgress) {
                 tapToFocus(e.x, e.y)
                 true
             } else {
-                false
+                true
             }
         }
     }
 
-    /** Wires the manual-control UI (format toggle, sliders, pro panel). */
+    /** Picks the best default camera: back RAW > back > first available. */
+    @SuppressLint("MissingPermission")
+    private fun pickDefaultCamera(): String {
+        val ids = cameraManager.cameraIdList.filter {
+            cameraManager.getCameraCharacteristics(it).get(
+                CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES
+            )?.contains(CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_BACKWARD_COMPATIBLE) == true
+        }
+        fun facing(id: String) = cameraManager.getCameraCharacteristics(id)
+            .get(CameraCharacteristics.LENS_FACING)
+        fun raw(id: String) = cameraManager.getCameraCharacteristics(id).get(
+            CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES
+        )?.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_RAW) == true
+        return ids.firstOrNull { facing(it) == CameraCharacteristics.LENS_FACING_BACK && raw(it) }
+            ?: ids.firstOrNull { facing(it) == CameraCharacteristics.LENS_FACING_BACK }
+            ?: ids.first()
+    }
+
+
+    /** Wires the zero-cam style UI: format toggle, chip panel, lens bar, zoom. */
     private fun wireControls() {
         fragmentCameraBinding.fmtToggle.setOnClickListener {
             formatJpeg = !formatJpeg
-            fragmentCameraBinding.fmtToggle.text = if (formatJpeg) "JPEG" else "RAW"
+            updateFormatChip()
             setStatus(if (formatJpeg) "output: HAL JPEG" else "output: RAW DNG")
         }
+        updateFormatChip()
 
-        val panel = fragmentCameraBinding.controlsScroll
-        fragmentCameraBinding.controlsBtn.setOnClickListener {
-            val show = panel.visibility == android.view.View.GONE
-            panel.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
+        fragmentCameraBinding.isoChip.setOnClickListener {
+            val show = fragmentCameraBinding.controlsScroll.visibility == View.GONE
+            fragmentCameraBinding.controlsScroll.visibility =
+                if (show) View.VISIBLE else View.GONE
         }
 
-        val zoomRange = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            characteristics.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE) ?: Range(1f, 1f)
-        } else {
-            Range(1f, 1f)
+        // ISO row
+        buildChips(
+            fragmentCameraBinding.isoChips,
+            listOf("AUTO" to null, "100" to 100, "200" to 200, "400" to 400,
+                "800" to 800, "1600" to 1600, "3200" to 3200),
+            { it == isoValue }
+        ) { value ->
+            isoValue = value
+            fragmentCameraBinding.isoChip.text = if (value == null) "ISO A" else "ISO $value"
+            refreshPreview()
         }
-        fragmentCameraBinding.zoomBar.setOnSeekBarChangeListener(simpleSeek { bar ->
-            val t = bar.progress / bar.max.toFloat()
-            zoomRatio = zoomRange.lower + (zoomRange.upper - zoomRange.lower) * t
-            fragmentCameraBinding.zoomVal.text =
-                String.format(java.util.Locale.US, "%.1fx", zoomRatio)
-            refreshPreview()
-        })
 
-        val maxFocus = characteristics.get(
-            CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE
-        ) ?: 0f
-        if (maxFocus <= 0f) fragmentCameraBinding.focusBar.isEnabled = false
-        fragmentCameraBinding.focusBar.setOnSeekBarChangeListener(simpleSeek { bar ->
-            focusDiopter = maxFocus * bar.progress / bar.max.toFloat()
-            fragmentCameraBinding.focusVal.text =
-                if (focusDiopter <= 0.01f) "af"
-                else String.format(java.util.Locale.US, "%.2fd", focusDiopter)
+        // Shutter row
+        buildChips(
+            fragmentCameraBinding.shutterChips,
+            listOf("AUTO" to null, "1/1000" to 1000, "1/500" to 500, "1/250" to 250,
+                "1/125" to 125, "1/60" to 60, "1/30" to 30),
+            { it == shutterDenom }
+        ) { value ->
+            shutterDenom = value
             refreshPreview()
-        })
-
-        listOf(
-            fragmentCameraBinding.wbAuto to 0,
-            fragmentCameraBinding.wb3200 to 3200,
-            fragmentCameraBinding.wb4000 to 4000,
-            fragmentCameraBinding.wb5200 to 5200,
-            fragmentCameraBinding.wb6000 to 6000
-        ).forEach { (view, k) ->
-            view.setOnClickListener {
-                wbKelvin = k
-                fragmentCameraBinding.wbVal.text = if (k == 0) "auto" else "${k}K"
-                fragmentCameraBinding.kelvinBar.progress = (k - 2500).coerceIn(0, fragmentCameraBinding.kelvinBar.max)
-                refreshPreview()
-            }
         }
-        fragmentCameraBinding.kelvinBar.setOnSeekBarChangeListener(simpleSeek { bar ->
-            wbKelvin = 2500 + bar.progress
-            fragmentCameraBinding.wbVal.text = "${wbKelvin}K"
-            refreshPreview()
-        })
 
+        // Exposure compensation row
         val evRange = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
             ?: Range(0, 0)
-        fragmentCameraBinding.evBar.setOnSeekBarChangeListener(simpleSeek { bar ->
-            evIndex = (bar.progress - bar.max / 2).coerceIn(evRange.lower, evRange.upper)
-            fragmentCameraBinding.evVal.text = (if (evIndex >= 0) "+" else "") + evIndex.toString()
-            refreshPreview()
-        })
+        buildChips(
+            fragmentCameraBinding.evChips,
+            listOf("-2" to -2, "-1" to -1, "0" to 0, "+1" to 1, "+2" to 2),
+            { it == evIndex }
+        ) { value ->
+            if (value in evRange.lower..evRange.upper) {
+                evIndex = value
+                refreshPreview()
+            } else {
+                setStatus("EV not supported")
+            }
+        }
 
-        val isoRange = characteristics.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE)
-        val expRange = characteristics.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE)
-        if (isoRange == null || expRange == null) fragmentCameraBinding.proSwitch.isEnabled = false
-        fragmentCameraBinding.proSwitch.setOnCheckedChangeListener { _, checked ->
-            proMode = checked
-            fragmentCameraBinding.isoRow.visibility =
-                if (checked) android.view.View.VISIBLE else android.view.View.GONE
-            fragmentCameraBinding.isoBar.visibility = fragmentCameraBinding.isoRow.visibility
-            fragmentCameraBinding.expRow.visibility = fragmentCameraBinding.isoRow.visibility
-            fragmentCameraBinding.expBar.visibility = fragmentCameraBinding.isoRow.visibility
+        // White balance row
+        buildChips(
+            fragmentCameraBinding.wbChips,
+            listOf("AUTO" to 0, "3200K" to 3200, "4000K" to 4000,
+                "5200K" to 5200, "6000K" to 6000),
+            { it == wbKelvin }
+        ) { value ->
+            wbKelvin = value
             refreshPreview()
         }
-        fragmentCameraBinding.isoBar.setOnSeekBarChangeListener(simpleSeek { bar ->
-            val r = isoRange ?: return@simpleSeek
-            val t = bar.progress / bar.max.toFloat()
-            iso = (r.lower * Math.pow(r.upper.toDouble() / r.lower, t.toDouble())).toInt()
-                .coerceIn(r.lower, r.upper)
-            fragmentCameraBinding.isoVal.text = iso.toString()
-            if (proMode) refreshPreview()
-        })
-        fragmentCameraBinding.expBar.setOnSeekBarChangeListener(simpleSeek { bar ->
-            val r = expRange ?: return@simpleSeek
-            val lo = r.lower.coerceAtLeast(10_000L)
-            val hi = r.upper.coerceAtMost(4_000_000_000L)
-            val t = bar.progress / bar.max.toFloat()
-            exposureNs = (lo * Math.pow(hi.toDouble() / lo, t.toDouble())).toLong()
-                .coerceIn(lo, hi)
-            fragmentCameraBinding.expVal.text =
-                (1e9 / exposureNs.toDouble()).toInt().coerceAtLeast(1).toString()
-            if (proMode) refreshPreview()
-        })
+
+        buildLensBar()
+
+        fragmentCameraBinding.zoomChip.setOnClickListener {
+            zoomRatio = 1f
+            fragmentCameraBinding.zoomChip.text = "1.0X"
+            refreshPreview()
+        }
     }
 
-    private inline fun simpleSeek(crossinline block: (android.widget.SeekBar) -> Unit):
-            android.widget.SeekBar.OnSeekBarChangeListener {
-        return object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: android.widget.SeekBar, progress: Int, fromUser: Boolean) {
-                block(seekBar)
+    /** Updates the RAW/JPEG format chip styling. */
+    private fun updateFormatChip() {
+        fragmentCameraBinding.fmtToggle.text = if (formatJpeg) "JPEG" else "RAW+"
+        styleChip(fragmentCameraBinding.fmtToggle, !formatJpeg)
+    }
+
+    /** Populates a row of selectable chips; [items] pairs labels with values. */
+    private fun <T> buildChips(
+        row: LinearLayout,
+        items: List<Pair<String, T>>,
+        isSelected: (T) -> Boolean,
+        onPick: (T) -> Unit
+    ) {
+        row.removeAllViews()
+        val dp = resources.displayMetrics.density
+        items.forEach { (label, value) ->
+            val chip = TextView(requireContext()).apply {
+                text = label
+                textSize = 12f
+                setPadding(
+                    (12 * dp).toInt(), (6 * dp).toInt(),
+                    (12 * dp).toInt(), (6 * dp).toInt()
+                )
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = (7 * dp).toInt() }
+                setOnClickListener {
+                    onPick(value)
+                    for (i in 0 until row.childCount) {
+                        val child = row.getChildAt(i) as TextView
+                        styleChip(child, isSelected(child.tag as T))
+                    }
+                }
+                tag = value
             }
-            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar) = Unit
-            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar) = Unit
+            styleChip(chip, isSelected(value))
+            row.addView(chip)
+        }
+    }
+
+    /** Applies the selected/unselected chip look. */
+    private fun styleChip(chip: TextView, selected: Boolean) {
+        chip.setBackgroundResource(
+            if (selected) R.drawable.bg_chip_selected else R.drawable.bg_chip
+        )
+        chip.setTextColor(
+            if (selected) ContextCompat.getColor(requireContext(), R.color.crust)
+            else ContextCompat.getColor(requireContext(), R.color.subtext0)
+        )
+    }
+
+    /** Populates the lens chips (one per back camera) above the shutter. */
+    private fun buildLensBar() {
+        val bar = fragmentCameraBinding.lensBar
+        bar.removeAllViews()
+        val dp = resources.displayMetrics.density
+        enumerateLenses().forEach { lens ->
+            val chip = TextView(requireContext()).apply {
+                text = lens.label
+                textSize = 12f
+                setPadding(
+                    (12 * dp).toInt(), (6 * dp).toInt(),
+                    (12 * dp).toInt(), (6 * dp).toInt()
+                )
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = (7 * dp).toInt() }
+                setOnClickListener { switchCamera(lens.id) }
+            }
+            styleChip(chip, lens.id == activeCameraId)
+            bar.addView(chip)
+        }
+    }
+
+    /** Lists back-facing cameras as lenses, labeled by focal length relative to main. */
+    @SuppressLint("MissingPermission")
+    private fun enumerateLenses(): List<LensInfo> {
+        val back = cameraManager.cameraIdList.filter { id ->
+            val c = cameraManager.getCameraCharacteristics(id)
+            c.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK &&
+                c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES)?.contains(
+                    CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_BACKWARD_COMPATIBLE
+                ) == true
+        }
+        val focal = back.associateWith { id ->
+            cameraManager.getCameraCharacteristics(id)
+                .get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)?.minOrNull() ?: 1f
+        }
+        // Baseline: the widest RAW-capable lens (the "main" camera), so it reads 1X
+        val rawFocals = back.mapNotNull { id ->
+            val c = cameraManager.getCameraCharacteristics(id)
+            val isRaw = c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES)?.contains(
+                CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_RAW) == true
+            if (isRaw) focal[id] else null
+        }
+        val baseline = rawFocals.minOrNull() ?: focal.values.minOrNull() ?: 1f
+        return back.map { id ->
+            val ratio = focal[id]!! / baseline
+            LensInfo(id, String.format(Locale.US, "%.1fX", ratio))
+        }
+    }
+
+    /** Switches to another lens in place, reusing the same preview surface. */
+    private fun switchCamera(cameraId: String) {
+        if (switching || cameraId == activeCameraId) return
+        switching = true
+        lifecycleScope.launch(Dispatchers.Main) {
+            try {
+                try { session.close() } catch (_: Exception) {}
+                try { camera.close() } catch (_: Exception) {}
+                activeCameraId = cameraId
+                characteristics = cameraManager.getCameraCharacteristics(cameraId)
+                zoomRatio = 1f
+                fragmentCameraBinding.zoomChip.text = "1.0X"
+                initializeCamera().join()
+                buildLensBar()
+                setStatus("lens ${enumerateLenses().firstOrNull { it.id == cameraId }?.label ?: "?"}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Lens switch failed", e)
+                setStatus("switch failed")
+            } finally {
+                switching = false
+            }
         }
     }
 
@@ -350,7 +478,7 @@ class CameraFragment : Fragment() {
      */
     private fun initializeCamera() = lifecycleScope.launch(Dispatchers.Main) {
         // Open the selected camera
-        camera = openCamera(cameraManager, args.cameraId, cameraHandler)
+        camera = openCamera(cameraManager, activeCameraId, cameraHandler)
 
         // Initialize an image reader which will be used to capture still photos
         Log.d(TAG, "Initializing image reader")
@@ -429,10 +557,19 @@ class CameraFragment : Fragment() {
         }
     }
 
-    /** Posts a status line to the camera UI. */
-    private fun setStatus(msg: String) {
+    /** Posts a status line to the camera UI; auto-hides after a moment. */
+    private fun setStatus(msg: String, sticky: Boolean = false) {
         lifecycleScope.launch(Dispatchers.Main) {
-            _fragmentCameraBinding?.statusText?.text = msg
+            _fragmentCameraBinding?.let { b ->
+                statusClearTask?.let { b.root.removeCallbacks(it) }
+                b.statusText.text = msg
+                b.statusText.visibility = View.VISIBLE
+                if (!sticky) {
+                    val task = Runnable { b.statusText.visibility = View.GONE }
+                    statusClearTask = task
+                    b.root.postDelayed(task, 2000)
+                }
+            }
         }
     }
 
@@ -450,12 +587,7 @@ class CameraFragment : Fragment() {
             builder.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON)
             builder.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, evIndex)
         }
-        if (focusDiopter > 0f) {
-            builder.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF)
-            builder.set(CaptureRequest.LENS_FOCUS_DISTANCE, focusDiopter)
-        } else {
-            builder.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
-        }
+        builder.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
         focusRegion?.let {
             builder.set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(it))
             builder.set(CaptureRequest.CONTROL_AE_REGIONS, arrayOf(it))
@@ -524,7 +656,7 @@ class CameraFragment : Fragment() {
             (cy - half).coerceAtLeast(rect.top),
             half * 2, half * 2, 1000
         )
-        if (focusDiopter <= 0f) refreshPreview(triggerAf = true)
+        refreshPreview(triggerAf = true)
         cameraHandler.postDelayed({ refreshPreview() }, 150)
     }
 
