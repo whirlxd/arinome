@@ -37,6 +37,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
 import android.hardware.camera2.params.MeteringRectangle
+import android.hardware.camera2.params.ColorSpaceTransform
 import android.util.Range
 import android.view.LayoutInflater
 import android.view.Surface
@@ -48,7 +49,11 @@ import android.view.ScaleGestureDetector
 import androidx.core.graphics.drawable.toDrawable
 import androidx.exifinterface.media.ExifInterface
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.TextView
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
+import android.content.res.ColorStateList
 import androidx.lifecycle.lifecycleScope
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Observer
@@ -162,6 +167,31 @@ class CameraFragment : Fragment() {
 
     private val proMode: Boolean get() = isoValue != null || shutterDenom != null
     private val iso: Int get() = isoValue ?: 100
+
+    // ---- Catppuccin theming (Mocha, Macchiato, Frappe, Latte) ----
+    private var paletteIndex = 0
+
+    private data class Palette(
+        val name: String, val panel: Int, val chip: Int, val chipText: Int,
+        val accent: Int, val onAccent: Int, val text: Int, val subtext: Int, val crust: Int
+    )
+
+    private val palettes = listOf(
+        Palette("MOCHA", 0xE61E1E2E.toInt(), 0xCC313244.toInt(), 0xFFA6ADC8.toInt(),
+            0xFFF9E2AF.toInt(), 0xFF11111B.toInt(), 0xFFCDD6F4.toInt(),
+            0xFFA6ADC8.toInt(), 0xFF11111B.toInt()),
+        Palette("MACCHIATO", 0xE624273A.toInt(), 0xCC363A4F.toInt(), 0xFFA5ADCB.toInt(),
+            0xFFEED49F.toInt(), 0xFF181926.toInt(), 0xFFCAD3F5.toInt(),
+            0xFFA5ADCB.toInt(), 0xFF181926.toInt()),
+        Palette("FRAPPE", 0xE6303446.toInt(), 0xCC414559.toInt(), 0xFFA5ADCE.toInt(),
+            0xFFE5C890.toInt(), 0xFF232634.toInt(), 0xFFC6D3F5.toInt(),
+            0xFFA5ADCE.toInt(), 0xFF232634.toInt()),
+        Palette("LATTE", 0xE6EFF1F5.toInt(), 0xCCDCE0E8.toInt(), 0xFF6C6F85.toInt(),
+            0xFFDF8E1D.toInt(), 0xFFEFF1F5.toInt(), 0xFF4C4F69.toInt(),
+            0xFF6C6F85.toInt(), 0xFFDCE0E8.toInt())
+    )
+
+    private val pal: Palette get() = palettes[paletteIndex]
     private val exposureNs: Long
         get() = shutterDenom?.let { (1e9 / it).toLong() } ?: 8_000_000L
 
@@ -178,11 +208,22 @@ class CameraFragment : Fragment() {
     }
 
     @SuppressLint("MissingPermission", "ClickableViewAccessibility")
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
         // Resolve which camera to open: nav argument wins, else the best back lens
         activeCameraId = args.cameraId ?: pickDefaultCamera()
+        // Load persisted Catppuccin palette and wire the theme cycler
+        val prefs = requireContext().getSharedPreferences("ui", Context.MODE_PRIVATE)
+        paletteIndex = prefs.getInt("palette", 0).coerceIn(0, palettes.size - 1)
+        applyTheme()
+        fragmentCameraBinding.themeChip.setOnClickListener {
+            paletteIndex = (paletteIndex + 1) % palettes.size
+            prefs.edit().putInt("palette", paletteIndex).apply()
+            applyTheme()
+            wireControls()
+        }
         characteristics = cameraManager.getCameraCharacteristics(activeCameraId)
 
         fragmentCameraBinding.viewFinder.holder.addCallback(object : SurfaceHolder.Callback {
@@ -267,7 +308,7 @@ class CameraFragment : Fragment() {
     }
 
 
-    /** Wires the zero-cam style UI: format toggle, chip panel, lens bar, zoom. */
+    /** Wires the zero-cam style UI: format toggle, chip panel, lens bar, zoom, pro sliders. */
     private fun wireControls() {
         fragmentCameraBinding.fmtToggle.setOnClickListener {
             formatJpeg = !formatJpeg
@@ -282,6 +323,50 @@ class CameraFragment : Fragment() {
                 if (show) View.VISIBLE else View.GONE
         }
 
+        // Manual WB gains need the MANUAL_POST_PROCESSING capability; hide otherwise
+        val manualPost = characteristics.get(
+            CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES
+        )?.contains(CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_POST_PROCESSING) == true
+        fragmentCameraBinding.wbScroll.visibility =
+            if (manualPost) View.VISIBLE else View.GONE
+
+        buildControlChips()
+        buildLensBar()
+
+        fragmentCameraBinding.zoomChip.setOnClickListener {
+            zoomRatio = 1f
+            fragmentCameraBinding.zoomChip.text = "1.0X"
+            refreshPreview()
+        }
+
+        // Pro sliders — optional fine control on top of the quick chips
+        fragmentCameraBinding.proSwitch.setOnCheckedChangeListener { _, checked ->
+            fragmentCameraBinding.isoSliderRow.visibility =
+                if (checked) View.VISIBLE else View.GONE
+            fragmentCameraBinding.expSliderRow.visibility =
+                if (checked) View.VISIBLE else View.GONE
+        }
+        fragmentCameraBinding.isoSlider.setOnSeekBarChangeListener(simpleSeek { bar ->
+            val v = (50.0 * Math.pow(128.0, bar.progress / 1000.0)).toInt()
+                .coerceIn(50, 6400)
+            isoValue = v
+            fragmentCameraBinding.isoSliderVal.text = v.toString()
+            fragmentCameraBinding.isoChip.text = "ISO $v"
+            buildControlChips()
+            refreshPreview()
+        })
+        fragmentCameraBinding.expSlider.setOnSeekBarChangeListener(simpleSeek { bar ->
+            val denom = (30.0 * Math.pow(133.3333, bar.progress / 1000.0)).toInt()
+                .coerceIn(30, 4000)
+            shutterDenom = denom
+            fragmentCameraBinding.expSliderVal.text = "1/$denom"
+            buildControlChips()
+            refreshPreview()
+        })
+    }
+
+    /** Rebuilds all chip rows so selection highlights match current state. */
+    private fun buildControlChips() {
         // ISO row
         buildChips(
             fragmentCameraBinding.isoChips,
@@ -331,13 +416,16 @@ class CameraFragment : Fragment() {
             wbKelvin = value
             refreshPreview()
         }
+    }
 
-        buildLensBar()
-
-        fragmentCameraBinding.zoomChip.setOnClickListener {
-            zoomRatio = 1f
-            fragmentCameraBinding.zoomChip.text = "1.0X"
-            refreshPreview()
+    private inline fun simpleSeek(crossinline block: (SeekBar) -> Unit):
+            SeekBar.OnSeekBarChangeListener {
+        return object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                block(seekBar)
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar) = Unit
         }
     }
 
@@ -345,6 +433,53 @@ class CameraFragment : Fragment() {
     private fun updateFormatChip() {
         fragmentCameraBinding.fmtToggle.text = if (formatJpeg) "JPEG" else "RAW+"
         styleChip(fragmentCameraBinding.fmtToggle, !formatJpeg)
+    }
+
+    /** Applies the active Catppuccin palette to all chrome. */
+    private fun applyTheme() {
+        val b = fragmentCameraBinding
+        b.controlsScroll.background = roundRect(pal.panel, 16f)
+        b.wordmark.setTextColor(pal.text)
+        b.statusText.setTextColor(pal.subtext)
+        b.isoChip.setTextColor(pal.text)
+        b.zoomChip.setTextColor(pal.text)
+        b.proLabel.setTextColor(pal.subtext)
+        b.isoSliderVal.setTextColor(pal.text)
+        b.expSliderVal.setTextColor(pal.text)
+        b.proSwitch.thumbTintList = ColorStateList.valueOf(pal.accent)
+        b.proSwitch.trackTintList = ColorStateList.valueOf(pal.chip)
+        listOf(b.isoSlider, b.expSlider).forEach { s ->
+            s.thumbTintList = ColorStateList.valueOf(pal.accent)
+            s.progressTintList = ColorStateList.valueOf(pal.accent)
+            s.progressBackgroundTintList = ColorStateList.valueOf(pal.chip)
+        }
+        // Shutter pill with an inner dot so it reads as a shutter button
+        val dot = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(pal.crust)
+        }
+        val d = resources.displayMetrics.density
+        val shutter = LayerDrawable(arrayOf(roundRect(pal.accent, 31f), dot))
+        shutter.setLayerInset(
+            1, (49 * d).toInt(), (18 * d).toInt(), (49 * d).toInt(), (18 * d).toInt()
+        )
+        b.captureButton.background = shutter
+        b.themeChip.text = pal.name
+        styleChip(b.themeChip, false)
+        updateFormatChip()
+    }
+
+    private fun roundRect(color: Int, radiusDp: Float): GradientDrawable =
+        GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = radiusDp * resources.displayMetrics.density
+            setColor(color)
+        }
+
+    /** Applies the selected/unselected chip look from the active palette. */
+    private fun styleChip(chip: TextView, selected: Boolean) {
+        chip.background = roundRect(if (selected) pal.accent else pal.chip, 8f)
+        chip.setTextColor(if (selected) pal.onAccent else pal.chipText)
     }
 
     /** Populates a row of selectable chips; [items] pairs labels with values. */
@@ -382,16 +517,6 @@ class CameraFragment : Fragment() {
         }
     }
 
-    /** Applies the selected/unselected chip look. */
-    private fun styleChip(chip: TextView, selected: Boolean) {
-        chip.setBackgroundResource(
-            if (selected) R.drawable.bg_chip_selected else R.drawable.bg_chip
-        )
-        chip.setTextColor(
-            if (selected) ContextCompat.getColor(requireContext(), R.color.crust)
-            else ContextCompat.getColor(requireContext(), R.color.subtext0)
-        )
-    }
 
     /** Populates the lens chips (one per back camera) above the shutter. */
     private fun buildLensBar() {
@@ -417,7 +542,7 @@ class CameraFragment : Fragment() {
         }
     }
 
-    /** Lists back-facing cameras as lenses, labeled by focal length relative to main. */
+    /** Lists back-facing cameras as lenses, labeled by 35mm-equivalent ratio to the main lens. */
     @SuppressLint("MissingPermission")
     private fun enumerateLenses(): List<LensInfo> {
         val back = cameraManager.cameraIdList.filter { id ->
@@ -427,22 +552,36 @@ class CameraFragment : Fragment() {
                     CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_BACKWARD_COMPATIBLE
                 ) == true
         }
-        val focal = back.associateWith { id ->
-            cameraManager.getCameraCharacteristics(id)
-                .get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)?.minOrNull() ?: 1f
-        }
-        // Baseline: the widest RAW-capable lens (the "main" camera), so it reads 1X
-        val rawFocals = back.mapNotNull { id ->
+        data class Cand(val id: String, val eq: Float, val focal: Float, val raw: Boolean)
+        val cands = back.mapNotNull { id ->
             val c = cameraManager.getCameraCharacteristics(id)
-            val isRaw = c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES)?.contains(
-                CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_RAW) == true
-            if (isRaw) focal[id] else null
+            val focal = c.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
+                ?.minOrNull() ?: return@mapNotNull null
+            // 35mm-equivalent focal length from the sensor's physical diagonal
+            val size = c.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
+            val eq = if (size != null) {
+                val diag = kotlin.math.sqrt(size.width * size.width + size.height * size.height)
+                focal * 43.27f / diag
+            } else {
+                focal
+            }
+            Cand(id, eq, focal, c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES)
+                ?.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_RAW) == true)
         }
-        val baseline = rawFocals.minOrNull() ?: focal.values.minOrNull() ?: 1f
-        return back.map { id ->
-            val ratio = focal[id]!! / baseline
-            LensInfo(id, String.format(Locale.US, "%.1fX", ratio))
+        if (cands.isEmpty()) return emptyList()
+        // Main lens = 35mm-equivalent closest to the classic ~26mm phone primary
+        val mainEq = cands.minByOrNull { kotlin.math.abs(it.eq - 26f) }!!.eq
+        fun label(eq: Float): String {
+            val r = eq / mainEq
+            return if (kotlin.math.abs(r - r.toInt()) < 0.05f) "${r.toInt()}X"
+            else String.format(Locale.US, "%.1fX", r)
         }
+        // Dedupe identical labels (some devices expose duplicate physicals); prefer RAW-capable
+        return cands
+            .sortedWith(compareByDescending<Cand> { it.raw }.thenBy { it.eq })
+            .distinctBy { label(it.eq) }
+            .sortedBy { it.eq }
+            .map { LensInfo(it.id, label(it.eq)) }
     }
 
     /** Switches to another lens in place, reusing the same preview surface. */
@@ -592,12 +731,33 @@ class CameraFragment : Fragment() {
             builder.set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(it))
             builder.set(CaptureRequest.CONTROL_AE_REGIONS, arrayOf(it))
         }
-        builder.set(CaptureRequest.COLOR_CORRECTION_MODE, CameraMetadata.COLOR_CORRECTION_MODE_FAST)
         if (wbKelvin > 0) {
+            // Manual gains are only honored with AWB off and the transform-matrix pipeline
+            builder.set(CaptureRequest.CONTROL_AWB_MODE, CameraMetadata.CONTROL_AWB_MODE_OFF)
+            builder.set(
+                CaptureRequest.COLOR_CORRECTION_MODE,
+                CameraMetadata.COLOR_CORRECTION_MODE_TRANSFORM_MATRIX
+            )
+            builder.set(
+                CaptureRequest.COLOR_CORRECTION_TRANSFORM,
+                ColorSpaceTransform(
+                    intArrayOf(
+                        1, 1, 0, 1, 0, 1,
+                        0, 1, 1, 1, 0, 1,
+                        0, 1, 0, 1, 1, 1
+                    )
+                )
+            )
             val (rg, bg) = kelvinToGains(wbKelvin)
             builder.set(
                 CaptureRequest.COLOR_CORRECTION_GAINS,
                 RggbChannelVector(rg, 1f, 1f, bg)
+            )
+        } else {
+            builder.set(CaptureRequest.CONTROL_AWB_MODE, CameraMetadata.CONTROL_AWB_MODE_AUTO)
+            builder.set(
+                CaptureRequest.COLOR_CORRECTION_MODE,
+                CameraMetadata.COLOR_CORRECTION_MODE_FAST
             )
         }
     }
@@ -624,16 +784,13 @@ class CameraFragment : Fragment() {
         return rg to bg
     }
 
-    /** Rebuilds and re-issues the preview repeating request with current state. */
-    private fun refreshPreview(triggerAf: Boolean = false) {
+    /** Rebuilds and re-issues the preview repeating request with current state.
+     *  No AF triggers here: continuous AF is steered by metering regions only —
+     *  a START followed by a quick IDLE cancels the sweep mid-travel and wedges the lens. */
+    private fun refreshPreview() {
         val b = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
             addTarget(fragmentCameraBinding.viewFinder.holder.surface)
             applyState(this)
-            set(
-                CaptureRequest.CONTROL_AF_TRIGGER,
-                if (triggerAf) CameraMetadata.CONTROL_AF_TRIGGER_START
-                else CameraMetadata.CONTROL_AF_TRIGGER_IDLE
-            )
         }
         try {
             session.setRepeatingRequest(b.build(), null, cameraHandler)
@@ -656,8 +813,7 @@ class CameraFragment : Fragment() {
             (cy - half).coerceAtLeast(rect.top),
             half * 2, half * 2, 1000
         )
-        refreshPreview(triggerAf = true)
-        cameraHandler.postDelayed({ refreshPreview() }, 150)
+        refreshPreview()
     }
 
     /** Opens the camera and returns the opened device (as the result of the suspend coroutine) */

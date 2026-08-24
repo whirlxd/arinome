@@ -50,6 +50,21 @@
             android:visibility="gone" />
 
         <TextView
+            android:id="@+id/theme_chip"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/bg_chip"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingTop="5dp"
+            android:paddingBottom="5dp"
+            android:text="MOCHA"
+            android:textColor="@color/subtext0"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <TextView
             android:id="@+id/fmt_toggle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -127,6 +142,7 @@
             </HorizontalScrollView>
 
             <HorizontalScrollView
+                android:id="@+id/wb_scroll"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
@@ -139,6 +155,113 @@
                     android:orientation="horizontal" />
 
             </HorizontalScrollView>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/pro_label"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="PRO SLIDERS"
+                    android:textColor="@color/subtext0"
+                    android:textSize="11sp" />
+
+                <Switch
+                    android:id="@+id/pro_switch"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:thumbTint="@color/yellow"
+                    android:trackTint="@color/surface0" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/iso_slider_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="ISO"
+                    android:textColor="@color/subtext0"
+                    android:textSize="11sp" />
+
+                <SeekBar
+                    android:id="@+id/iso_slider"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_marginEnd="10dp"
+                    android:max="1000"
+                    android:progress="290"
+                    android:thumbTint="@color/yellow"
+                    android:progressTint="@color/yellow"
+                    android:progressBackgroundTint="@color/surface0" />
+
+                <TextView
+                    android:id="@+id/iso_slider_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="40dp"
+                    android:gravity="end"
+                    android:text="100"
+                    android:textColor="@color/text"
+                    android:textSize="12sp" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/exp_slider_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="SHUTTER"
+                    android:textColor="@color/subtext0"
+                    android:textSize="11sp" />
+
+                <SeekBar
+                    android:id="@+id/exp_slider"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_marginEnd="10dp"
+                    android:max="1000"
+                    android:progress="500"
+                    android:thumbTint="@color/yellow"
+                    android:progressTint="@color/yellow"
+                    android:progressBackgroundTint="@color/surface0" />
+
+                <TextView
+                    android:id="@+id/exp_slider_val"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="52dp"
+                    android:gravity="end"
+                    android:text="1/125"
+                    android:textColor="@color/text"
+                    android:textSize="12sp" />
+
+            </LinearLayout>
 
         </LinearLayout>
     </ScrollView>
