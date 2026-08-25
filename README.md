@@ -17,12 +17,11 @@ arinome opens directly into the viewfinder and captures either DNG sensor data o
 - JPEG/DNG metadata identifies arinome
 - No extra camera or image-processing framework
 
-## Android identity
+## Android 
 
-- Application ID: `com.whirlxd.arinome`
 - Minimum SDK: 21
 - Compile/target SDK: 34
-- UI: AppCompat + ViewBinding
+
 
 ## Build
 
