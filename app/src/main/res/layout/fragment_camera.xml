@@ -15,6 +15,21 @@
         android:layout_height="match_parent"
         android:foreground="@android:color/transparent" />
 
+    <!-- aperture mask: closes over the viewfinder during lens switches -->
+    <View
+        android:id="@+id/aperture_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#FF000000"
+        android:visibility="invisible" />
+
+    <!-- tap-to-focus reticle (invisible but measured; positioned at tap point) -->
+    <View
+        android:id="@+id/focus_reticle"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:visibility="invisible" />
+
     <!-- top bar: wordmark pill left, theme + format pinned right -->
     <LinearLayout
         android:id="@+id/top_bar"

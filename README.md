@@ -23,7 +23,7 @@ converted from RAW to bitmap data before being compressed into a JPEG.
 Pre-requisites
 --------------
 
-- Android SDK 29+
+- Android SDK 29+ I do like last kill
 - Android Studio 3.5+
 
 Screenshots
