@@ -15,7 +15,7 @@
         android:layout_height="match_parent"
         android:foreground="@android:color/transparent" />
 
-    <!-- top bar: wordmark + status + theme + format -->
+    <!-- top bar: wordmark pill left, theme + format pinned right -->
     <LinearLayout
         android:id="@+id/top_bar"
         android:layout_width="match_parent"
@@ -31,30 +31,21 @@
             android:id="@+id/wordmark"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:background="@drawable/bg_chip"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
             android:singleLine="true"
             android:text="unprocess"
             android:textColor="@color/text"
-            android:textSize="15sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.02"
-            android:shadowColor="#80000000"
-            android:shadowRadius="4" />
+            android:textSize="13sp"
+            android:textStyle="bold" />
 
-        <TextView
-            android:id="@+id/status_text"
+        <Space
             android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="10dp"
-            android:layout_marginEnd="10dp"
-            android:gravity="end|center_vertical"
-            android:singleLine="true"
-            android:ellipsize="end"
-            android:textColor="@color/subtext0"
-            android:textSize="11sp"
-            android:shadowColor="#80000000"
-            android:shadowRadius="4"
-            android:visibility="gone" />
+            android:layout_height="1dp"
+            android:layout_weight="1" />
 
         <TextView
             android:id="@+id/theme_chip"

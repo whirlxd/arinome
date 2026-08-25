@@ -37,7 +37,6 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
 import android.hardware.camera2.params.MeteringRectangle
-import android.hardware.camera2.params.ColorSpaceTransform
 import android.util.Range
 import android.view.LayoutInflater
 import android.view.Surface
@@ -160,7 +159,6 @@ class CameraFragment : Fragment() {
     private var formatJpeg = false     // default: RAW (unprocess's spirit)
     private var capturing = false
     private var switching = false
-    private var statusClearTask: Runnable? = null
     private var focusRegion: MeteringRectangle? = null
 
     private val proMode: Boolean get() = isoValue != null || shutterDenom != null
@@ -345,7 +343,6 @@ class CameraFragment : Fragment() {
         fragmentCameraBinding.fmtToggle.setOnClickListener {
             formatJpeg = !formatJpeg
             updateFormatChip()
-            setStatus(if (formatJpeg) "output: HAL JPEG" else "output: RAW DNG")
         }
         updateFormatChip()
 
@@ -433,11 +430,11 @@ class CameraFragment : Fragment() {
         if (show) {
             p.visibility = View.VISIBLE
             p.alpha = 0f
-            p.translationY = 36f * d
-            p.animate().alpha(1f).translationY(0f).setDuration(180)
-                .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+            p.translationY = 48f * d
+            p.animate().alpha(1f).translationY(0f).setDuration(240)
+                .setInterpolator(android.view.animation.DecelerateInterpolator(1.6f)).start()
         } else {
-            p.animate().alpha(0f).translationY(36f * d).setDuration(140)
+            p.animate().alpha(0f).translationY(48f * d).setDuration(160)
                 .setInterpolator(android.view.animation.AccelerateInterpolator())
                 .withEndAction { p.visibility = View.GONE }.start()
         }
@@ -458,15 +455,22 @@ class CameraFragment : Fragment() {
 
     /** Rebuilds all chip rows so selection highlights match current state. */
     private fun buildControlChips() {
-        // ISO row
+        // ISO row — highlights also match nearby slider-derived values
         buildChips(
             fragmentCameraBinding.isoChips,
             listOf("AUTO" to null, "100" to 100, "200" to 200, "400" to 400,
                 "800" to 800, "1600" to 1600, "3200" to 3200),
-            { it == isoValue }
+            { val cur = isoValue; it == cur || (it != null && cur != null &&
+                kotlin.math.abs(kotlin.math.ln(it.toDouble() / cur.toDouble())) < 0.18) }
         ) { value ->
             isoValue = value
             fragmentCameraBinding.isoChip.text = if (value == null) "ISO A" else "ISO $value"
+            if (value != null) {
+                fragmentCameraBinding.isoSlider.progress =
+                    (Math.log(value / 50.0) / Math.log(128.0) * 1000).toInt()
+                        .coerceIn(0, 1000)
+                fragmentCameraBinding.isoSliderVal.text = value.toString()
+            }
             refreshPreview()
         }
 
@@ -475,19 +479,25 @@ class CameraFragment : Fragment() {
             fragmentCameraBinding.shutterChips,
             listOf("AUTO" to null, "1/1000" to 1000, "1/500" to 500, "1/250" to 250,
                 "1/125" to 125, "1/60" to 60, "1/30" to 30),
-            { it == shutterDenom }
+            { val cur = shutterDenom; it == cur || (it != null && cur != null &&
+                kotlin.math.abs(kotlin.math.ln(it.toDouble() / cur.toDouble())) < 0.18) }
         ) { value ->
             shutterDenom = value
+            if (value != null) {
+                fragmentCameraBinding.expSlider.progress =
+                    (Math.log(value / 30.0) / Math.log(4000.0 / 30.0) * 1000).toInt()
+                        .coerceIn(0, 1000)
+                fragmentCameraBinding.expSliderVal.text = "1/$value"
+            }
             refreshPreview()
         }
 
-
-        // White balance row
+        // White balance row — highlights within ±150K of slider-derived kelvin
         buildChips(
             fragmentCameraBinding.wbChips,
             listOf("AUTO" to 0, "3200K" to 3200, "4000K" to 4000,
                 "5200K" to 5200, "6000K" to 6000),
-            { it == wbKelvin }
+            { it == wbKelvin || (it != 0 && wbKelvin > 0 && kotlin.math.abs(it - wbKelvin) <= 150) }
         ) { value ->
             wbKelvin = value
             if (value == 0) {
@@ -501,29 +511,23 @@ class CameraFragment : Fragment() {
         }
     }
 
+    /** Seek listener that only reacts to user drags, not programmatic sync. */
     private inline fun simpleSeek(crossinline block: (SeekBar) -> Unit):
             SeekBar.OnSeekBarChangeListener {
         return object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
-                block(seekBar)
+                // Ignore programmatic updates so chip->slider sync doesn't feed back
+                if (fromUser) block(seekBar)
             }
             override fun onStartTrackingTouch(seekBar: SeekBar) = Unit
             override fun onStopTrackingTouch(seekBar: SeekBar) = Unit
         }
     }
-
-    /** Updates the RAW/JPEG format chip styling. */
-    private fun updateFormatChip() {
-        fragmentCameraBinding.fmtToggle.text = if (formatJpeg) "JPEG" else "RAW+"
-        styleChip(fragmentCameraBinding.fmtToggle, !formatJpeg)
-    }
-
     /** Applies the active Catppuccin palette to all chrome. */
     private fun applyTheme() {
         val b = fragmentCameraBinding
         b.controlsScroll.background = roundRect(pal.panel, 16f)
-        b.wordmark.setTextColor(pal.text)
-        b.statusText.setTextColor(pal.subtext)
+        styleChip(b.wordmark, false)
         b.isoChip.setTextColor(pal.text)
         b.zoomChip.setTextColor(pal.text)
         b.proLabel.setTextColor(pal.subtext)
@@ -559,6 +563,12 @@ class CameraFragment : Fragment() {
             setColor(color)
         }
 
+    /** Updates the RAW/JPEG format chip styling. */
+    private fun updateFormatChip() {
+        fragmentCameraBinding.fmtToggle.text = if (formatJpeg) "JPEG" else "RAW+"
+        styleChip(fragmentCameraBinding.fmtToggle, !formatJpeg)
+    }
+
     /** Applies the selected/unselected chip look from the active palette. */
     private fun styleChip(chip: TextView, selected: Boolean) {
         chip.background = roundRect(if (selected) pal.accent else pal.chip, 8f)
@@ -586,12 +596,17 @@ class CameraFragment : Fragment() {
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { marginEnd = (7 * dp).toInt() }
-                setOnClickListener {
+                setOnClickListener { view ->
                     onPick(value)
                     for (i in 0 until row.childCount) {
                         val child = row.getChildAt(i) as TextView
                         styleChip(child, isSelected(child.tag as T))
                     }
+                    // Selection pop
+                    view.animate().scaleX(1.08f).scaleY(1.08f).setDuration(70)
+                        .withEndAction {
+                            view.animate().scaleX(1f).scaleY(1f).setDuration(110).start()
+                        }.start()
                 }
                 tag = value
             }
@@ -684,35 +699,20 @@ class CameraFragment : Fragment() {
                 fragmentCameraBinding.zoomChip.text = "1.0X"
                 initializeCamera().join()
                 buildLensBar()
-                setStatus("lens ${enumerateLenses().firstOrNull { it.id == cameraId }?.label ?: "?"}")
             } catch (e: Exception) {
                 Log.e(TAG, "Lens switch failed", e)
-                setStatus("switch failed")
+                toast("Lens switch failed")
             } finally {
                 switching = false
             }
         }
     }
 
-    /** Posts a status line to the camera UI; fades in, auto-hides after a moment. */
-    private fun setStatus(msg: String, sticky: Boolean = false) {
+    /** Transient error feedback that doesn't clutter the viewfinder. */
+    private fun toast(msg: String) {
         lifecycleScope.launch(Dispatchers.Main) {
-            _fragmentCameraBinding?.let { b ->
-                statusClearTask?.let { b.root.removeCallbacks(it) }
-                b.statusText.text = msg
-                b.statusText.visibility = View.VISIBLE
-                b.statusText.animate().cancel()
-                b.statusText.alpha = 0f
-                b.statusText.animate().alpha(1f).setDuration(120).start()
-                if (!sticky) {
-                    val task = Runnable {
-                        b.statusText.animate().alpha(0f).setDuration(200)
-                            .withEndAction { b.statusText.visibility = View.GONE }.start()
-                    }
-                    statusClearTask = task
-                    b.root.postDelayed(task, 2000)
-                }
-            }
+            android.widget.Toast.makeText(requireContext(), msg, android.widget.Toast.LENGTH_SHORT)
+                .show()
         }
     }
 
@@ -776,12 +776,14 @@ class CameraFragment : Fragment() {
         // Listen to the capture button — non-blocking: saves happen in the IO
         // scope while the camera keeps shooting
         fragmentCameraBinding.captureButton.setOnClickListener {
-            if (capturing) {
-                setStatus("busy…")
-                return@setOnClickListener
-            }
+            if (capturing) return@setOnClickListener
             capturing = true
-            setStatus("capturing…")
+            // Shutter pulse
+            fragmentCameraBinding.captureButton.animate().scaleX(0.92f).scaleY(0.92f)
+                .setDuration(80).withEndAction {
+                    fragmentCameraBinding.captureButton.animate().scaleX(1f).scaleY(1f)
+                        .setDuration(140).start()
+                }.start()
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
                     val reader = if (formatJpeg && args.pixelFormat != ImageFormat.JPEG) {
@@ -792,11 +794,10 @@ class CameraFragment : Fragment() {
                     takePhoto(reader).use { result ->
                         val output = saveResult(result)
                         Log.d(TAG, "Image saved: ${output.absolutePath}")
-                        setStatus("saved ${output.name}")
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Capture failed", e)
-                    setStatus("error: ${e.message}")
+                    toast("Capture failed: ${e.message}")
                 } finally {
                     capturing = false
                 }
@@ -842,21 +843,13 @@ class CameraFragment : Fragment() {
             builder.set(CaptureRequest.CONTROL_AE_REGIONS, arrayOf(it))
         }
         if (wbKelvin > 0) {
-            // Manual gains are only honored with AWB off and the transform-matrix pipeline
+            // Manual WB: AWB off + channel gains only. The HAL's normal color-correction
+            // matrix stays active (FAST) — swapping it for an identity transform discards
+            // the sensor's calibration and produces a green cast.
             builder.set(CaptureRequest.CONTROL_AWB_MODE, CameraMetadata.CONTROL_AWB_MODE_OFF)
             builder.set(
                 CaptureRequest.COLOR_CORRECTION_MODE,
-                CameraMetadata.COLOR_CORRECTION_MODE_TRANSFORM_MATRIX
-            )
-            builder.set(
-                CaptureRequest.COLOR_CORRECTION_TRANSFORM,
-                ColorSpaceTransform(
-                    intArrayOf(
-                        1, 1, 0, 1, 0, 1,
-                        0, 1, 1, 1, 0, 1,
-                        0, 1, 0, 1, 1, 1
-                    )
-                )
+                CameraMetadata.COLOR_CORRECTION_MODE_FAST
             )
             val (rg, bg) = kelvinToGains(wbKelvin)
             builder.set(
@@ -1094,7 +1087,8 @@ class CameraFragment : Fragment() {
     /** Helper function used to save a [CombinedCaptureResult] into a [File] */
     private suspend fun saveResult(result: CombinedCaptureResult): File = suspendCoroutine { cont ->
         when (result.format) {
-            // HAL JPEG: raw bytes straight from the ISP, saved as-is
+            // HAL JPEG: ISP bytes, EXIF stamped with the app name before saving.
+            // Done in-memory so OxygenOS doesn't reject a post-insert rewrite.
             ImageFormat.JPEG -> {
                 val buffer = result.image.planes[0].buffer
                 val bytes = ByteArray(buffer.remaining()).also { buffer.get(it) }
@@ -1111,6 +1105,17 @@ class CameraFragment : Fragment() {
                     MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues
                 ) ?: throw IOException("Failed to create MediaStore entry")
                 resolver.openOutputStream(uri)?.use { it.write(bytes) }
+                // Stamp the app name into EXIF; keep original bytes if the rewrite fails
+                try {
+                    resolver.openFileDescriptor(uri, "rw")?.use { pfd ->
+                        ExifInterface(pfd.fileDescriptor).apply {
+                            setAttribute(ExifInterface.TAG_SOFTWARE, "unprocess")
+                            saveAttributes()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "EXIF stamp skipped", e)
+                }
                 val dcim = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)
                 cont.resume(File(File(dcim, "Camera"), filename))
             }
@@ -1118,6 +1123,8 @@ class CameraFragment : Fragment() {
             // Only expecting RAW sensor data
             ImageFormat.RAW_SENSOR -> {
                 val dngCreator = DngCreator(characteristics, result.metadata)
+                // Metadata watermark: ImageDescription tag carries the app name
+                dngCreator.setDescription("unprocess")
                 try {
                     if (args.convertToJpeg) {
                         // Get RAW image data
