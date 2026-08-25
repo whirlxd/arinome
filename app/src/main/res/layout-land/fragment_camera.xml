@@ -9,13 +9,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <View
-        android:id="@+id/overlay"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:foreground="@android:color/transparent" />
-
-    <!-- aperture mask: closes over the viewfinder during lens switches -->
+    <!-- black transition mask for lens switches -->
     <View
         android:id="@+id/aperture_overlay"
         android:layout_width="match_parent"
@@ -259,48 +253,6 @@
                     android:minWidth="52dp"
                     android:gravity="end"
                     android:text="1/125"
-                    android:textColor="@color/text"
-                    android:textSize="12sp" />
-
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/wb_slider_row"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:visibility="gone">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:minWidth="52dp"
-                    android:text="WB"
-                    android:textColor="@color/subtext0"
-                    android:textSize="11sp" />
-
-                <SeekBar
-                    android:id="@+id/wb_slider"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="10dp"
-                    android:layout_marginEnd="10dp"
-                    android:max="1000"
-                    android:progress="386"
-                    android:thumbTint="@color/yellow"
-                    android:progressTint="@color/yellow"
-                    android:progressBackgroundTint="@color/surface0" />
-
-                <TextView
-                    android:id="@+id/wb_slider_val"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:minWidth="52dp"
-                    android:gravity="end"
-                    android:text="AUTO"
                     android:textColor="@color/text"
                     android:textSize="12sp" />
 
