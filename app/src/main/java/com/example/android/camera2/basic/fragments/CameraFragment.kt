@@ -1124,7 +1124,7 @@ class CameraFragment : Fragment() {
             ImageFormat.RAW_SENSOR -> {
                 val dngCreator = DngCreator(characteristics, result.metadata)
                 // Metadata watermark: ImageDescription tag carries the app name
-                dngCreator.setDescription("unprocess")
+                dngCreator.setDescription("shot through unprocess")
                 try {
                     if (args.convertToJpeg) {
                         // Get RAW image data
