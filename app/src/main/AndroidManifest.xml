@@ -15,8 +15,7 @@
   ~ limitations under the License.
   -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
-    package="com.reilandeubank.unprocess">
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Permission declarations -->
     <uses-permission android:name="android.permission.CAMERA" />
@@ -35,10 +34,11 @@
         android:fullBackupContent="true"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         tools:ignore="GoogleAppIndexingWarning">
 
         <activity
-            android:name="com.reilandeubank.unprocess.CameraActivity"
+            android:name=".CameraActivity"
             android:clearTaskOnLaunch="true"
             android:exported="true"
             android:theme="@style/AppTheme">

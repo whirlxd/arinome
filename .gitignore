@@ -33,3 +33,8 @@ google-services.json
 *.hprof
 /app/release
 gradle-8.9-bin.zip
+
+#AI Files
+AGENTS.md
+HANDOFF.md
+

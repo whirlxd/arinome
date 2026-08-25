@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <com.reilandeubank.unprocess.utils.AutoFitSurfaceView
+    <com.whirlxd.arinome.utils.AutoFitSurfaceView
         android:id="@+id/view_finder"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
@@ -46,7 +46,7 @@
             android:paddingTop="6dp"
             android:paddingBottom="6dp"
             android:singleLine="true"
-            android:text="unprocess"
+            android:text="arinome"
             android:textColor="@color/text"
             android:textSize="13sp"
             android:textStyle="bold" />
@@ -161,7 +161,7 @@
                     android:layout_width="0dp"
                     android:layout_weight="1"
                     android:layout_height="wrap_content"
-                    android:text="PRO SLIDERS"
+                    android:text="PRO MODE"
                     android:textColor="@color/subtext0"
                     android:textSize="11sp" />
 
@@ -343,7 +343,7 @@
             android:id="@+id/capture_button"
             android:layout_width="124dp"
             android:layout_height="62dp"
-            android:scaleType="fitCenter"
+            android:scaleType="center"
             android:background="@drawable/bg_shutter_pill"
             android:contentDescription="@string/capture" />
 

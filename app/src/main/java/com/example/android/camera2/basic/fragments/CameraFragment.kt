@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.reilandeubank.unprocess.fragments
+package com.whirlxd.arinome.fragments
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -59,11 +59,11 @@ import androidx.lifecycle.lifecycleScope
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Observer
 import androidx.navigation.fragment.navArgs
-import com.reilandeubank.unprocess.utils.computeExifOrientation
-import com.reilandeubank.unprocess.utils.getPreviewOutputSize
-import com.reilandeubank.unprocess.utils.OrientationLiveData
-import com.reilandeubank.unprocess.R
-import com.reilandeubank.unprocess.databinding.FragmentCameraBinding
+import com.whirlxd.arinome.utils.computeExifOrientation
+import com.whirlxd.arinome.utils.getPreviewOutputSize
+import com.whirlxd.arinome.utils.OrientationLiveData
+import com.whirlxd.arinome.R
+import com.whirlxd.arinome.databinding.FragmentCameraBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -86,11 +86,8 @@ import android.content.ContentValues
 import android.content.pm.PackageManager
 import android.os.Environment
 import android.provider.MediaStore
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.animation.ValueAnimator
 import android.view.HapticFeedbackConstants
-import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.ImageView
 import android.view.animation.AccelerateInterpolator
 import android.view.animation.DecelerateInterpolator
@@ -150,7 +147,7 @@ class CameraFragment : Fragment() {
     private var focusDiopter = 0f      // 0 = continuous AF
     private var isoValue: Int? = null      // null = auto ISO
     private var shutterDenom: Int? = null  // null = auto shutter
-    private var formatJpeg = false     // default: RAW (unprocess's spirit)
+    private var formatJpeg = false     // default: RAW (arinome's spirit)
     private var capturing = false
     private var switching = false
     private var focusRegion: MeteringRectangle? = null
@@ -158,7 +155,13 @@ class CameraFragment : Fragment() {
      *  check this so a closed camera can never throw. */
     @Volatile private var cameraLive = false
     private var reticleHide: Runnable? = null
-    private var shutterIrisAnimator: ValueAnimator? = null
+    private var savedFeedbackAnimator: ValueAnimator? = null
+    private val clearSavedFeedback = Runnable {
+        _fragmentCameraBinding?.captureButton?.apply {
+            setImageDrawable(null)
+            imageAlpha = 255
+        }
+    }
     private var wbSampleCountdown = 0
     private var previewRefreshPending = false
     private val previewRefreshTask = Runnable {
@@ -360,7 +363,7 @@ class CameraFragment : Fragment() {
     }
 
 
-    /** Wires the zero-cam style UI: format toggle, chip panel, lens bar, zoom, pro sliders. */
+  
     private fun wireControls() {
         fragmentCameraBinding.fmtToggle.setOnClickListener {
             formatJpeg = !formatJpeg
@@ -453,8 +456,7 @@ class CameraFragment : Fragment() {
         pressScale(fragmentCameraBinding.captureButton)
     }
 
-    /** Native-feeling panel motion: translation only, no per-frame clipping,
-     *  alpha, scale, or object allocation. */
+
     private fun togglePanel(show: Boolean) {
         val p = fragmentCameraBinding.controlsScroll
         val d = resources.displayMetrics.density
@@ -491,26 +493,21 @@ class CameraFragment : Fragment() {
         }
     }
 
-    /** Inner-dot shutter iris; isolated from the button's touch-scale animation. */
-    private fun animateShutterIris() {
-        val shutter = fragmentCameraBinding.captureButton.background as? LayerDrawable ?: return
-        val d = resources.displayMetrics.density
-        val openHorizontal = 49f * d
-        val openVertical = 18f * d
-        val travel = 7f * d
-        shutterIrisAnimator?.cancel()
-        shutterIrisAnimator = ValueAnimator.ofFloat(0f, 1f, 0f).apply {
-            duration = 180
-            interpolator = AccelerateDecelerateInterpolator()
-            addUpdateListener { animator ->
-                val fraction = animator.animatedValue as Float
-                val horizontal = (openHorizontal + travel * fraction).toInt()
-                val vertical = (openVertical + travel * fraction).toInt()
-                shutter.setLayerInset(1, horizontal, vertical, horizontal, vertical)
-                fragmentCameraBinding.captureButton.invalidate()
-            }
+    /** Immediate, compact shot acknowledgement inside the shutter button. */
+    private fun showCaptureFeedback() {
+        val button = fragmentCameraBinding.captureButton
+        button.removeCallbacks(clearSavedFeedback)
+        savedFeedbackAnimator?.cancel()
+        val check = AppCompatResources.getDrawable(
+            requireContext(), R.drawable.ic_capture_saved_phosphor
+        )?.mutate()?.apply { setTint(pal.accent) }
+        button.setImageDrawable(check)
+        savedFeedbackAnimator = ValueAnimator.ofInt(96, 255, 255, 0).apply {
+            duration = 900
+            addUpdateListener { button.imageAlpha = it.animatedValue as Int }
             start()
         }
+        button.postDelayed(clearSavedFeedback, 900)
     }
 
     /** Cached row restyler; avoids drawable allocation unless selection/theme changes. */
@@ -578,7 +575,7 @@ class CameraFragment : Fragment() {
             R.drawable.ic_wb_shade_phosphor, "Shade")
     )
 
-    /** Phosphor ImageViews center icons; AUTO remains a centered text chip. */
+    
     private fun buildWbChips() {
         val row = fragmentCameraBinding.wbChips
         row.removeAllViews()
@@ -717,7 +714,6 @@ class CameraFragment : Fragment() {
         bar.tag = idx
     }
 
-    /** Seek listener that ignores programmatic chip-to-slider synchronization. */
     private inline fun simpleSeek(crossinline block: (SeekBar) -> Unit):
             SeekBar.OnSeekBarChangeListener {
         return object : SeekBar.OnSeekBarChangeListener {
@@ -729,8 +725,7 @@ class CameraFragment : Fragment() {
         }
     }
 
-    /** Apply a palette once. The old per-frame restyle rebuilt drawables and
-     *  tint lists for 220ms, causing flicker and avoidable GC pressure. */
+   
     private fun applyTheme() {
         fragmentCameraBinding.themeChip.text = pal.name
         applyChrome(pal)
@@ -987,7 +982,7 @@ class CameraFragment : Fragment() {
             if (!cameraLive || capturing) return@setOnClickListener
             fragmentCameraBinding.captureButton.performHapticFeedback(
                 HapticFeedbackConstants.VIRTUAL_KEY)
-            animateShutterIris()
+            showCaptureFeedback()
             capturing = true
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
@@ -1370,7 +1365,7 @@ class CameraFragment : Fragment() {
                 try {
                     resolver.openFileDescriptor(uri, "rw")?.use { pfd ->
                         ExifInterface(pfd.fileDescriptor).apply {
-                            setAttribute(ExifInterface.TAG_SOFTWARE, "unprocess")
+                            setAttribute(ExifInterface.TAG_SOFTWARE, "arinome")
                             saveAttributes()
                         }
                     }
@@ -1381,158 +1376,52 @@ class CameraFragment : Fragment() {
                 cont.resume(File(File(dcim, "Camera"), filename))
             }
 
-            // Only expecting RAW sensor data
             ImageFormat.RAW_SENSOR -> {
-                val dngCreator = DngCreator(characteristics, result.metadata)
-                // Metadata watermark: ImageDescription tag carries the app name
-                dngCreator.setDescription("shot through unprocess")
+                val dngCreator = DngCreator(characteristics, result.metadata).apply {
+                    setDescription("shot through arinome")
+                    setOrientation(result.orientation)
+                }
+                val filename = "RAW_${
+                    SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                }.dng"
                 try {
-                    if (args.convertToJpeg) {
-                        // Get RAW image data
-                        val rawImage = result.image
-                        val rawBuffer = rawImage.planes[0].buffer
-                        val rawBytes = ByteArray(rawBuffer.remaining())
-                        rawBuffer.get(rawBytes)
-
-                        // Create a temporary DNG file
-                        val tempDngFile = File(requireContext().cacheDir, "temp.dng")
-                        FileOutputStream(tempDngFile).use { outputStream ->
-                            dngCreator.writeImage(outputStream, rawImage)
-                        }
-
-                        // TODO: Right now, using android's basic bitmap conversion,
-                        //  may want to use RenderScript or other RAW processing library
-                        val bitmap = BitmapFactory.decodeFile(tempDngFile.absolutePath)
-                        tempDngFile.delete() // Clean up temp file
-
-                        // Save as JPEG
-                        val filename = "IMG_${
-                            SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
-                                .format(Date())
-                        }.jpg"
-
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            val contentValues = ContentValues().apply {
-                                put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-                                put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-                                put(
-                                    MediaStore.MediaColumns.RELATIVE_PATH,
-                                    "${Environment.DIRECTORY_DCIM}/Camera"
-                                )
-                            }
-
-                            val resolver = requireContext().contentResolver
-                            val uri = resolver.insert(
-                                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                                contentValues
-                            ) ?: throw IOException("Failed to create MediaStore entry")
-
-                            resolver.openOutputStream(uri)?.use { stream ->
-                                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)
-                            }
-
-                            // Add EXIF orientation data using the URI
-                            resolver.openFileDescriptor(uri, "rw")?.use { pfd ->
-                                ExifInterface(pfd.fileDescriptor).apply {
-                                    setAttribute(ExifInterface.TAG_ORIENTATION, result.orientation.toString())
-                                    saveAttributes()
-                                }
-                            }
-
-                            // Create a reference file in the DCIM directory
-                            val dcim = Environment.getExternalStoragePublicDirectory(
-                                Environment.DIRECTORY_DCIM
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        val contentValues = ContentValues().apply {
+                            put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                            put(MediaStore.MediaColumns.MIME_TYPE, "image/x-adobe-dng")
+                            put(
+                                MediaStore.MediaColumns.RELATIVE_PATH,
+                                "${Environment.DIRECTORY_DCIM}/Camera"
                             )
-                            val appFolder = File(dcim, "Camera")
-                            val savedFile = File(appFolder, filename)
-                            cont.resume(savedFile)
-                        } else {
-                            val dcim = Environment.getExternalStoragePublicDirectory(
-                                Environment.DIRECTORY_DCIM
-                            )
-                            val appFolder = File(dcim, "Camera").apply {
-                                if (!exists()) mkdirs()
-                            }
-                            val file = File(appFolder, filename)
-
-                            FileOutputStream(file).use { stream ->
-                                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)
-                            }
-
-                            // Add EXIF orientation data
-                            ExifInterface(file.absolutePath).apply {
-                                setAttribute(ExifInterface.TAG_ORIENTATION, result.orientation.toString())
-                                saveAttributes()
-                            }
-
-                            cont.resume(file)
                         }
-
-                        bitmap.recycle()
+                        val resolver = requireContext().contentResolver
+                        val uri = resolver.insert(
+                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                            contentValues
+                        ) ?: throw IOException("Failed to create MediaStore entry")
+                        resolver.openOutputStream(uri)?.use { stream ->
+                            dngCreator.writeImage(stream, result.image)
+                        } ?: throw IOException("Failed to open output stream")
+                        val dcim = Environment.getExternalStoragePublicDirectory(
+                            Environment.DIRECTORY_DCIM)
+                        cont.resume(File(File(dcim, "Camera"), filename))
                     } else {
-                        dngCreator.setOrientation(result.orientation)
-                        val filename = "RAW_${
-                            SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
-                                .format(Date())
-                        }.dng"
-
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            // Android 10 and above: Use MediaStore
-                            val contentValues = ContentValues().apply {
-                                put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-                                put(MediaStore.MediaColumns.MIME_TYPE, "image/x-adobe-dng")
-                                put(
-                                    MediaStore.MediaColumns.RELATIVE_PATH,
-                                    "${Environment.DIRECTORY_DCIM}/Camera"
-                                )
-                            }
-
-                            val resolver = requireContext().contentResolver
-                            val uri = resolver.insert(
-                                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                                contentValues
-                            ) ?: throw IOException("Failed to create MediaStore entry")
-
-                            val outputStream = resolver.openOutputStream(uri)
-                                ?: throw IOException("Failed to open output stream")
-
-                            outputStream.use { stream ->
-                                dngCreator.writeImage(stream, result.image)
-                            }
-
-                            // Create a reference file in the DCIM directory
-                            val dcim = Environment.getExternalStoragePublicDirectory(
-                                Environment.DIRECTORY_DCIM
-                            )
-                            val appFolder = File(dcim, "Camera")
-                            val savedFile = File(appFolder, filename)
-                            cont.resume(savedFile)
-
-                        } else {
-                            // Below Android 10: Use direct file access
-                            val dcim = Environment.getExternalStoragePublicDirectory(
-                                Environment.DIRECTORY_DCIM
-                            )
-                            val appFolder = File(dcim, "Camera").apply {
-                                if (!exists()) {
-                                    mkdirs()
-                                }
-                            }
-                            val file = File(appFolder, filename)
-
-                            FileOutputStream(file).use { outputStream ->
-                                dngCreator.writeImage(outputStream, result.image)
-                            }
-
-                            // BUGFIX (fork): the legacy path never resumed the
-                            // coroutine, leaving captures hanging forever
-                            cont.resume(file)
+                        val dcim = Environment.getExternalStoragePublicDirectory(
+                            Environment.DIRECTORY_DCIM)
+                        val appFolder = File(dcim, "Camera").apply {
+                            if (!exists()) mkdirs()
                         }
+                        val file = File(appFolder, filename)
+                        FileOutputStream(file).use { stream ->
+                            dngCreator.writeImage(stream, result.image)
+                        }
+                        cont.resume(file)
                     }
-
                 } catch (exc: IOException) {
-                    Log.e(TAG, "Unable to write JPEG image to external storage", exc)
+                    Log.e(TAG, "Unable to write DNG image", exc)
                     cont.resumeWithException(exc)
+                } finally {
+                    dngCreator.close()
                 }
             }
 
@@ -1562,8 +1451,9 @@ class CameraFragment : Fragment() {
     }
 
     override fun onDestroyView() {
-        shutterIrisAnimator?.cancel()
-        shutterIrisAnimator = null
+        savedFeedbackAnimator?.cancel()
+        savedFeedbackAnimator = null
+        _fragmentCameraBinding?.captureButton?.removeCallbacks(clearSavedFeedback)
         _fragmentCameraBinding?.viewFinder?.removeCallbacks(previewRefreshTask)
         _fragmentCameraBinding?.apertureOverlay?.animate()?.cancel()
         previewRefreshPending = false

@@ -20,7 +20,7 @@
 
     <fragment
         android:id="@+id/permissions_fragment"
-        android:name="com.reilandeubank.unprocess.fragments.PermissionsFragment"
+        android:name="com.whirlxd.arinome.fragments.PermissionsFragment"
         android:label="Permissions">
 
         <action
@@ -33,7 +33,7 @@
 
     <fragment
         android:id="@+id/camera_fragment"
-        android:name="com.reilandeubank.unprocess.fragments.CameraFragment"
+        android:name="com.whirlxd.arinome.fragments.CameraFragment"
         android:label="Camera">
 
         <argument
@@ -47,10 +47,6 @@
             app:argType="integer"
             android:defaultValue="32" />
 
-        <argument
-            android:name="convert_to_jpeg"
-            app:argType="boolean"
-            android:defaultValue="false" />
 
     </fragment>
 

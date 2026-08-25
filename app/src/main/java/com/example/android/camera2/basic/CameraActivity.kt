@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-package com.reilandeubank.unprocess
+package com.whirlxd.arinome
 
 import android.os.Bundle
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
-import com.reilandeubank.unprocess.databinding.ActivityCameraBinding
+import com.whirlxd.arinome.databinding.ActivityCameraBinding
 
 class CameraActivity : AppCompatActivity() {
 

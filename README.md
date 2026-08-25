@@ -1,46 +1,77 @@
-![logo-sm](https://github.com/user-attachments/assets/264da8ed-7ac7-48b5-b2da-ddd62eafd668)
+# arinome
 
+A minimal RAW-first Android camera by **whirlxd**.
 
-unprocess
-===========================
+arinome opens directly into the viewfinder and captures either DNG sensor data or a direct camera-HAL JPEG. It is intentionally camera-first: no gallery, no viewer flow, no computational-photography pipeline added by the app.
 
-This project is based on https://github.com/android/camera-samples/tree/main/Camera2Basic and is a
-simple, open source solution to taking unprocessed images on your Android phone, free of
-modern devices' excessive computational photography.
+## Features
 
-Introduction
-------------
+- RAW DNG and direct HAL JPEG capture
+- Main/ultrawide lens switching with 35 mm-equivalent labels
+- ISO and shutter presets plus optional PRO sliders
+- Quadratic manual-focus control and tap-to-focus
+- Camera2 white-balance preset controls with a device-calibrated fallback for HALs that ignore their advertised modes
+- Pinch zoom
+- Catppuccin Mocha, Macchiato, Frappe, and Latte palettes
+- Captures remain in the viewfinder and save asynchronously to `DCIM/Camera`
+- JPEG/DNG metadata identifies arinome
+- No extra camera or image-processing framework
 
-unprocess uses the [Camera2 API][1] to capture raw sensor data from the camera before being
-converted to a human-viewable file format.
+## Android identity
 
-Currently, unprocess allows users to choose between RAW (.dng) or JPEG (.jpg) for the final,
-saved file. The images are captured in the same way, but in the latter case the raw data is
-converted from RAW to bitmap data before being compressed into a JPEG.
+- Application ID: `com.whirlxd.arinome`
+- Minimum SDK: 21
+- Compile/target SDK: 34
+- UI: AppCompat + ViewBinding
 
-[1]: https://developer.android.com/reference/android/hardware/camera2/package-summary.html
+## Build
 
-Pre-requisites
---------------
+JDK 17 and Android SDK 34 are required.
 
-- Android SDK 29+ I do like last kill
-- Android Studio 3.5+
+Windows:
 
-Screenshots
--------------
+```powershell
+$env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
+.\gradlew.bat assembleDebug --console=plain
+adb install -r app\build\outputs\apk\debug\app-debug.apk
+adb shell am start -n com.whirlxd.arinome/.CameraActivity
+```
 
-None at the moment
+Linux/macOS and GitHub Actions:
 
-Getting Started
----------------
+```bash
+./gradlew :app:assembleDebug --console=plain
+```
 
-This sample uses the Gradle build system. To build this project, use the
-"gradlew build" command or use "Import Project" in Android Studio.
+The workstation wrapper points to the checked local Gradle 8.9 ZIP because that machine may not reach Gradle distribution servers. CI rewrites the wrapper URL in its isolated checkout.
 
-Support
--------
+## Automated builds and releases
 
-Patches are encouraged, and may be submitted by forking this project and
-submitting a pull request through GitHub.
+`.github/workflows/android.yml` builds a debug APK for every push and pull request.
 
-Unfortunately, since graduating college and getting a full time job, I am no longer able to dedicate any time to this project.
+Pushing a tag such as `v1.1.0` builds a signed release APK, generates a SHA-256 file, and publishes both in a GitHub release. Configure these repository secrets first:
+
+- `ARINOME_KEYSTORE_BASE64` — base64-encoded release keystore
+- `ARINOME_KEYSTORE_PASSWORD`
+- `ARINOME_KEY_ALIAS`
+- `ARINOME_KEY_PASSWORD`
+
+The tag sets `versionName` without its leading `v`; the GitHub run number becomes `versionCode`.
+
+## Project lineage and acknowledgement
+
+arinome was forked from [`reilandeubank/unprocess`](https://github.com/reilandeubank/unprocess), which itself builds on Google's [`Camera2Basic`](https://github.com/android/camera-samples/tree/main/Camera2Basic) sample.
+
+Only a small, barebones part of that upstream foundation remains at arinome's core: the Camera2 RAW capture/session structure and a handful of camera utilities. The application flow, interface, branding, RAW/JPEG selection, lens controls, focus behavior, white-balance handling, themes, motion, save experience, performance work, package identity, release assets, and automation have been substantially rewritten for arinome.
+
+Thank you to the original `unprocess` author and the Android camera-samples contributors for the foundation.
+
+## Icons
+
+Launcher artwork is supplied by whirlxd under `icons/`. In-app white-balance and capture-check symbols use [Phosphor Icons](https://phosphoricons.com/) under the MIT License.
+
+## License
+
+arinome continues under the **Apache License 2.0**. See [`LICENSE`](LICENSE).
+
+Existing upstream copyright and license headers are retained in inherited files. The acknowledgement above documents the project's origin; arinome is maintained by whirlxd.

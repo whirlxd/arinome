@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.reilandeubank.unprocess.utils
+package com.whirlxd.arinome.utils
 
 import android.content.Context
 import android.hardware.camera2.CameraCharacteristics
