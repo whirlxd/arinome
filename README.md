@@ -44,18 +44,6 @@ Linux/macOS and GitHub Actions:
 
 The workstation wrapper points to the checked local Gradle 8.9 ZIP because that machine may not reach Gradle distribution servers. CI rewrites the wrapper URL in its isolated checkout.
 
-## Automated builds and releases
-
-`.github/workflows/android.yml` builds a debug APK for every push and pull request.
-
-Pushing a tag such as `v1.1.0` builds a signed release APK, generates a SHA-256 file, and publishes both in a GitHub release. Configure these repository secrets first:
-
-- `ARINOME_KEYSTORE_BASE64` — base64-encoded release keystore
-- `ARINOME_KEYSTORE_PASSWORD`
-- `ARINOME_KEY_ALIAS`
-- `ARINOME_KEY_PASSWORD`
-
-The tag sets `versionName` without its leading `v`; the GitHub run number becomes `versionCode`.
 
 ## Project lineage and acknowledgement
 
