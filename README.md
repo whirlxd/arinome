@@ -1,8 +1,10 @@
 # arinome
 
-A minimal RAW-first Android camera by **whirlxd**.
+A minimal camera for android stripping away the post processing from your manufacturer
 
-arinome opens directly into the viewfinder and captures either DNG sensor data or a direct camera-HAL JPEG. It is intentionally camera-first: no gallery, no viewer flow, no computational-photography pipeline added by the app.
+arinome opens directly into the viewfinder and captures either DNG sensor data or a direct camera-HAL JPEG. It's useful especially if you have a chinese brand who likes to throttle and intentionally degrade cameras.
+
+It is entirely based on camera2 api to ensure there isn't any interference and the produced output is as close to what you see when you shoot
 
 ## Features
 
@@ -13,9 +15,8 @@ arinome opens directly into the viewfinder and captures either DNG sensor data o
 - Camera2 white-balance preset controls with a device-calibrated fallback for HALs that ignore their advertised modes
 - Pinch zoom
 - Catppuccin Mocha, Macchiato, Frappe, and Latte palettes
-- Captures remain in the viewfinder and save asynchronously to `DCIM/Camera`
-- JPEG/DNG metadata identifies arinome
-- No extra camera or image-processing framework
+
+
 
 ## Android 
 
